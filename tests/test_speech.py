@@ -29,7 +29,7 @@ class SpeakableTest(unittest.TestCase):
             self.assertNotIn(noise, spoken)
         self.assertIn("date parser.py", spoken)
         self.assertIn("Ver el PR.", spoken)
-        self.assertIn("He dejado el código en pantalla.", spoken)
+        self.assertIn("Le dejé el código en pantalla.", spoken)
 
     def test_lead_is_first_prose_paragraph(self):
         self.assertEqual(

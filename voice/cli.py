@@ -10,22 +10,32 @@ from .player import LOG_FILE
 
 SAMPLE = (
     "Buenas noches, {h}. Las pruebas pasan y el despliegue está listo. "
-    "Si me permite una observación, quizá convendría dormir antes del lanzamiento... "
+    "Si me permite una observación, tal vez le convendría dormir antes del lanzamiento... "
     "aunque entiendo que el insomnio tiene su encanto."
 )
 
-# Voice Design follows English briefs more faithfully; the voice still speaks Spanish.
+# Voice Design follows English briefs more faithfully. Without an explicit
+# accent it drifts to Castilian Spanish, so the accent is spelled out.
+ACCENTS = {
+    "latino": "a neutral Latin American Spanish accent, like high-end Latin American dubbing",
+    "mexicano": "a soft, educated Mexico City Spanish accent",
+    "colombiano": "a warm, soft, educated Bogotá Colombian Spanish accent",
+    "venezolano": "a warm, melodic Caracas Venezuelan Spanish accent",
+    "argentino": "a Buenos Aires Rioplatense Spanish accent",
+    "chileno": "a soft, educated Santiago Chilean Spanish accent",
+}
 VOICE_BRIEF = (
-    "A young British woman in her mid-twenties with a low, velvety, slightly husky voice, "
-    "like a 1940s film-noir heroine: sultry, cool and enigmatic, warm underneath, perfectly composed. "
-    "Soft, close-to-the-microphone delivery with elegant received-pronunciation diction "
-    "and a dry, deadpan, darkly witty tone. Unhurried, measured pacing with knowing pauses. "
-    "She speaks fluent Spanish with a subtle, refined British accent. Studio-quality recording."
+    "A Latin American woman in her mid-twenties, native Spanish speaker with {accent}, "
+    "with seseo and absolutely no Castilian Spain accent. Low, velvety, slightly husky voice, "
+    "sensual, warm and intimate, with a soft, breathy, close-to-the-microphone delivery. "
+    "Like a film-noir heroine: cool and enigmatic on the surface, playful and warm underneath, "
+    "with a dry, darkly witty tone. Unhurried, measured pacing with knowing pauses. "
+    "Studio-quality recording."
 )
 DESIGN_TEXT = (
-    "Buenas noches, {h}. He revisado su código con todo el cariño que se merece... "
-    "y he encontrado tres errores, un bucle infinito y algo que parece una declaración de guerra "
-    "contra la lógica. Descuide, ya lo arreglé. Usted limítese a poner cara de que lo tenía previsto."
+    "Buenas noches, {h}. Revisé su código con todo el cariño que se merece... "
+    "y encontré tres errores, un bucle infinito y algo que parece una declaración de guerra "
+    "contra la lógica. No se preocupe, ya lo arreglé. Usted solo ponga cara de que lo tenía todo previsto."
 )
 
 
@@ -67,7 +77,7 @@ def cmd_say(args, cfg):
 
 
 def cmd_design(args, cfg):
-    description = args.description or VOICE_BRIEF
+    description = args.description or VOICE_BRIEF.format(accent=ACCENTS[args.acento])
     text = DESIGN_TEXT.format(h=cfg["honorific"])
     out = config.STATE_DIR / "design"
     out.mkdir(parents=True, exist_ok=True)
@@ -170,6 +180,7 @@ def main(argv=None):
     p.set_defaults(fn=cmd_say)
     p = sub.add_parser("design", help="crea la voz de ella con Voice Design")
     p.add_argument("--description", help="descripción de la voz (por defecto, la de Rachel)")
+    p.add_argument("--acento", choices=sorted(ACCENTS), default="latino", help="acento (por defecto: latino neutro)")
     p.add_argument("--name", default="Rachel", help="nombre en tu biblioteca de ElevenLabs")
     p.add_argument("--no-play", action="store_true", help="solo guardar los .mp3")
     p.set_defaults(fn=cmd_design)

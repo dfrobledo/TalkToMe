@@ -1,6 +1,6 @@
 # TalkToMe — Claude Code con la voz de Rachel
 
-Proyecto RocketYeah: que Claude Code **hable** con la naturalidad de las conversaciones de Tony Stark con J.A.R.V.I.S. Su voz es **Rachel**, como la replicante de Blade Runner: veinteañera, aterciopelada, enigmática, de cine negro, con el humor negro de un mayordomo británico. Cada vez que Claude termina una respuesta, TalkToMe la convierte en habla natural con ElevenLabs y la dice en voz alta. Te saluda al abrir sesión, te avisa cuando necesita permiso y se calla en cuanto le hablas.
+Proyecto RocketYeah: que Claude Code **hable** con la naturalidad de las conversaciones de Tony Stark con J.A.R.V.I.S. Su voz es **Rachel**, como la replicante de Blade Runner: latinoamericana, veinteañera, aterciopelada, enigmática, de cine negro, con el humor negro de un mayordomo británico. Cada vez que Claude termina una respuesta, TalkToMe la convierte en habla natural con ElevenLabs y la dice en voz alta. Te saluda al abrir sesión, te avisa cuando necesita permiso y se calla en cuanto le hablas.
 
 ```
  Tú escribes ──► Claude Code ──► respuesta en pantalla
@@ -74,7 +74,7 @@ Para que no hable en ejecuciones automáticas (por ejemplo `claude -p` en script
 | Clave | Valor por defecto | Notas |
 |---|---|---|
 | `honorific` | `"señor"` | Cómo te llama Rachel |
-| `voice_id` | Lily (`pFZP5JQG7iQjIQuC4Bku`) | Provisional: británica, aterciopelada. `design` la reemplaza |
+| `voice_id` | Lily (`pFZP5JQG7iQjIQuC4Bku`) | Provisional (británica, habla español con acento inglés). `design` la reemplaza |
 | `model_id` | `eleven_multilingual_v2` | Ver tabla de modelos |
 | `voice_settings` | stability 0.4 · similarity 0.8 · style 0.35 · speed 0.97 | Menos stability = más emoción |
 | `mode` | `auto` | `auto`, `lead` (solo párrafo hablado) o `full` |
@@ -90,10 +90,10 @@ Para que no hable en ejecuciones automáticas (por ejemplo `claude -p` en script
 
 ## La voz: más humana que un humano
 
-Rachel: británica de veintitantos, voz grave y aterciopelada, un punto ronca, fría y enigmática como una heroína de cine negro pero cálida por dentro, que habla español con un leve acento inglés y humor negro impasible.
+Rachel: latinoamericana de veintitantos, voz grave y aterciopelada, un punto ronca, sensual, fría y enigmática como una heroína de cine negro pero cálida por dentro, con humor negro impasible. Habla español latino, nunca de España: la voz lo pide explícitamente y el estilo le prohíbe el vocabulario peninsular ("vale", "ordenador", "he revisado"...).
 
-1. **Voice Design, el camino recomendado.** `python talktome.py design` le describe esa voz a ElevenLabs (la descripción está en inglés porque así la sigue con más fidelidad), genera varias candidatas diciendo una frase en personaje, te las reproduce y guarda la que elijas en tu biblioteca y en `talktome.config.json`. Con `r` generas otra tanda. Puedes pasar tu propia descripción con `--description "..."`. Cada tanda consume algunos créditos.
-2. **Mientras tanto**, la voz por defecto es *Lily*, británica y aterciopelada pero algo mayor. Otras prediseñadas: `talktome.py voices`, y para probar una sin tocar la config: `ELEVENLABS_VOICE_ID=<id> python talktome.py say`.
+1. **Voice Design, el camino recomendado.** `python talktome.py design` le describe esa voz a ElevenLabs (la descripción está en inglés porque así la sigue con más fidelidad), genera varias candidatas diciendo una frase en personaje, te las reproduce y guarda la que elijas en tu biblioteca y en `talktome.config.json`. Con `r` generas otra tanda. Elige el acento con `--acento`: `latino` (neutro, por defecto), `mexicano`, `colombiano`, `venezolano`, `argentino` o `chileno`. Puedes pasar tu propia descripción con `--description "..."`. Cada tanda consume algunos créditos.
+2. **Mientras tanto**, la voz por defecto es *Lily*, británica: al hablar español tiene acento inglés, así que es solo un comodín. Plan B a `design`: en la web de ElevenLabs, Voice Library, filtra por idioma español, acento latinoamericano y voz femenina, añade la que te guste y pega su ID en la config. Otras prediseñadas: `talktome.py voices`, y para probar una sin tocar la config: `ELEVENLABS_VOICE_ID=<id> python talktome.py say`.
 3. **Afinado fino** en `voice_settings`: `stability` 0.3–0.4 da más vida y picardía; `style` hasta ~0.45 da más interpretación (más arriba sobreactúa); `speed` 0.95–0.97 da la cadencia pausada y seductora.
 4. **Máxima expresividad**: `"model_id": "eleven_v3"` permite etiquetas como `[whispers]`, `[laughs softly]` o `[sarcastic]` en el párrafo hablado.
 

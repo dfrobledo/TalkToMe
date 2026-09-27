@@ -44,7 +44,7 @@ def _inline(text, keep_tags):
     return re.sub(r"\s+", " ", text).strip()
 
 
-def to_speech(markdown, code_phrase="He dejado el código en pantalla.", keep_tags=False):
+def to_speech(markdown, code_phrase="Le dejé el código en pantalla.", keep_tags=False):
     """Convert a full markdown response into speakable paragraphs."""
     text = FENCE.sub(f"\n\n{code_phrase}\n\n", markdown or "")
     paragraphs, current = [], []
