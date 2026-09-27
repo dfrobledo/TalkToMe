@@ -1,4 +1,4 @@
-"""Jarvis' fixed lines: greetings, attention calls and sign-offs.
+"""Rachel's fixed lines: greetings, attention calls and sign-offs.
 
 They are short and repeat often, so after the first time they are served
 from the local cache and cost no ElevenLabs characters.
@@ -9,7 +9,7 @@ from datetime import datetime
 
 GREETINGS = [
     "Todos los sistemas en línea. De momento.",
-    "Lo estaba esperando. Más o menos.",
+    "¿Viene a hacerme otra prueba Voight-Kampff?",
     "¿Qué vamos a romper hoy?",
     "Café servido, errores pendientes. Lo de siempre.",
 ]
@@ -26,7 +26,7 @@ ATTENTION = {"permission_prompt", "idle_prompt", "elicitation_dialog", "agent_ne
 
 
 def notification(payload, h):
-    """Translate Claude Code's notification into something Jarvis would say.
+    """Translate Claude Code's notification into something Rachel would say.
 
     Returns "" for notifications that do not need the user (auth, quota...).
     """
@@ -40,7 +40,7 @@ def notification(payload, h):
     if kind == "permission_prompt" or "permission" in message.lower():
         return f"Disculpe, {h}. Necesito su autorización para continuar."
     if kind == "idle_prompt" or "waiting for your input" in message.lower():
-        return f"Sigo aquí, {h}. Esperándolo, como siempre."
+        return f"Sigo aquí, {h}. Los replicantes no dormimos."
     return f"{h.capitalize()}, requiero su atención un momento."
 
 

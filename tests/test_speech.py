@@ -3,9 +3,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from jarvis import persona, speakable, transcript
-from jarvis.config import DEFAULTS
-from jarvis.hooks import compose_reply
+from voice import persona, speakable, transcript
+from voice.config import DEFAULTS
+from voice.hooks import compose_reply
 
 REPLY = """Listo, señor. Las pruebas pasan y el cambio está en la rama.
 

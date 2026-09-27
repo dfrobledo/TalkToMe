@@ -1,4 +1,4 @@
-"""talktome: Claude Code con la voz de Jarvis (ElevenLabs)."""
+"""talktome: Claude Code con la voz de Rachel (ElevenLabs)."""
 import argparse
 import base64
 import json
@@ -16,11 +16,11 @@ SAMPLE = (
 
 # Voice Design follows English briefs more faithfully; the voice still speaks Spanish.
 VOICE_BRIEF = (
-    "A young British woman in her mid-twenties with a low, velvety, slightly husky voice. "
-    "Sultry, warm and intimate yet perfectly composed, with a soft, close-to-the-microphone delivery. "
-    "Elegant received-pronunciation diction and a dry, deadpan, darkly witty tone. "
-    "Unhurried, confident pacing with playful pauses. She speaks fluent Spanish with a subtle, "
-    "refined British accent. Studio-quality recording."
+    "A young British woman in her mid-twenties with a low, velvety, slightly husky voice, "
+    "like a 1940s film-noir heroine: sultry, cool and enigmatic, warm underneath, perfectly composed. "
+    "Soft, close-to-the-microphone delivery with elegant received-pronunciation diction "
+    "and a dry, deadpan, darkly witty tone. Unhurried, measured pacing with knowing pauses. "
+    "She speaks fluent Spanish with a subtle, refined British accent. Studio-quality recording."
 )
 DESIGN_TEXT = (
     "Buenas noches, {h}. He revisado su código con todo el cariño que se merece... "
@@ -134,7 +134,7 @@ def cmd_mute(args, cfg):
     config.set_muted(args.command == "mute")
     if args.command == "mute":
         player.stop()
-    print("Jarvis en silencio." if args.command == "mute" else "Jarvis vuelve a hablar.")
+    print("Rachel guarda silencio." if args.command == "mute" else "Rachel vuelve a hablar.")
     return 0
 
 
@@ -157,15 +157,15 @@ def main(argv=None):
     p.add_argument("text", nargs="*")
     p.set_defaults(fn=cmd_say)
     p = sub.add_parser("design", help="crea la voz de ella con Voice Design")
-    p.add_argument("--description", help="descripción de la voz (por defecto, la de Jarvis)")
-    p.add_argument("--name", default="Jarvis", help="nombre en tu biblioteca de ElevenLabs")
+    p.add_argument("--description", help="descripción de la voz (por defecto, la de Rachel)")
+    p.add_argument("--name", default="Rachel", help="nombre en tu biblioteca de ElevenLabs")
     p.add_argument("--no-play", action="store_true", help="solo guardar los .mp3")
     p.set_defaults(fn=cmd_design)
     sub.add_parser("voices", help="lista tus voces de ElevenLabs").set_defaults(fn=cmd_voices)
     sub.add_parser("quota", help="caracteres disponibles").set_defaults(fn=cmd_quota)
     sub.add_parser("doctor", help="verifica la instalación").set_defaults(fn=cmd_doctor)
     sub.add_parser("stop", help="calla la frase en curso").set_defaults(fn=cmd_stop)
-    sub.add_parser("mute", help="silencia a Jarvis").set_defaults(fn=cmd_mute)
+    sub.add_parser("mute", help="silencia a Rachel").set_defaults(fn=cmd_mute)
     sub.add_parser("unmute", help="reactiva la voz").set_defaults(fn=cmd_mute)
 
     args = parser.parse_args(argv)

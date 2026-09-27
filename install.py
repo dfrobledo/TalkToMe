@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Connect TalkToMe to Claude Code (user level: every project gets the voice).
 
-    python install.py              # hooks + Jarvis output style
+    python install.py              # hooks + Rachel output style
     python install.py --no-style   # voice only, keep your current style
     python install.py --uninstall  # remove everything TalkToMe added
 """
@@ -15,8 +15,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 CLAUDE_DIR = Path(os.environ.get("CLAUDE_CONFIG_DIR", Path.home() / ".claude"))
 SETTINGS = CLAUDE_DIR / "settings.json"
-STYLE_SRC = ROOT / "claude" / "output-styles" / "jarvis.md"
-STYLE_DST = CLAUDE_DIR / "output-styles" / "jarvis.md"
+STYLE_SRC = ROOT / "claude" / "output-styles" / "rachel.md"
+STYLE_DST = CLAUDE_DIR / "output-styles" / "rachel.md"
+# Earlier versions installed the persona as "Jarvis".
+LEGACY_STYLE = CLAUDE_DIR / "output-styles" / "jarvis.md"
+STYLE_NAMES = {"Rachel", "Jarvis"}
 MARKER = "talktome.py"
 EVENTS = {"SessionStart": "session", "UserPromptSubmit": "prompt", "Notification": "notification", "Stop": "stop"}
 
@@ -52,7 +55,7 @@ def _strip_ours(hooks):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--no-style", action="store_true", help="no activar el estilo Jarvis")
+    parser.add_argument("--no-style", action="store_true", help="no activar el estilo Rachel")
     parser.add_argument("--uninstall", action="store_true")
     args = parser.parse_args()
 
@@ -62,8 +65,10 @@ def main():
 
     hooks = settings.setdefault("hooks", {})
     _strip_ours(hooks)
+    if LEGACY_STYLE.exists():
+        LEGACY_STYLE.unlink()
     if args.uninstall:
-        if settings.get("outputStyle") == "Jarvis":
+        if settings.get("outputStyle") in STYLE_NAMES:
             del settings["outputStyle"]
         if STYLE_DST.exists():
             STYLE_DST.unlink()
@@ -75,7 +80,9 @@ def main():
         STYLE_DST.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(STYLE_SRC, STYLE_DST)
         if not args.no_style:
-            settings["outputStyle"] = "Jarvis"
+            settings["outputStyle"] = "Rachel"
+        elif settings.get("outputStyle") == "Jarvis":
+            del settings["outputStyle"]
     if not hooks:
         del settings["hooks"]
 
@@ -86,7 +93,7 @@ def main():
         print(f"TalkToMe desinstalado de {SETTINGS}.")
         return
     print(f"Hooks instalados en {SETTINGS}")
-    print(f"Estilo Jarvis copiado a {STYLE_DST}" + ("" if args.no_style else " y activado"))
+    print(f"Estilo Rachel copiado a {STYLE_DST}" + ("" if args.no_style else " y activado"))
     if not (ROOT / ".env").exists():
         print("Siguiente paso: copia .env.example a .env y pon tu ELEVENLABS_API_KEY.")
     print("Luego: python talktome.py doctor  ·  python talktome.py say")

@@ -12,7 +12,7 @@ from .config import STATE_DIR
 
 
 def compose_reply(markdown, cfg):
-    """Decide what Jarvis says about a reply, given the configured mode."""
+    """Decide what Rachel says about a reply, given the configured mode."""
     keep_tags = cfg["model_id"] == "eleven_v3"
     h = cfg["honorific"]
     full = speakable.to_speech(markdown, keep_tags=keep_tags)

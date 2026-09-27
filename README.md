@@ -1,6 +1,6 @@
-# TalkToMe — Claude Code con voz de Jarvis
+# TalkToMe — Claude Code con la voz de Rachel
 
-Proyecto RocketYeah: que Claude Code **hable** como J.A.R.V.I.S., en versión femenina: veinteañera, voz aterciopelada y humor negro de mayordomo británico. Cada vez que Claude termina una respuesta, TalkToMe la convierte en habla natural con ElevenLabs y la dice en voz alta. Te saluda al abrir sesión, te avisa cuando necesita permiso y se calla en cuanto le hablas.
+Proyecto RocketYeah: que Claude Code **hable** con la naturalidad de las conversaciones de Tony Stark con J.A.R.V.I.S. Su voz es **Rachel**, como la replicante de Blade Runner: veinteañera, aterciopelada, enigmática, de cine negro, con el humor negro de un mayordomo británico. Cada vez que Claude termina una respuesta, TalkToMe la convierte en habla natural con ElevenLabs y la dice en voz alta. Te saluda al abrir sesión, te avisa cuando necesita permiso y se calla en cuanto le hablas.
 
 ```
  Tú escribes ──► Claude Code ──► respuesta en pantalla
@@ -16,9 +16,9 @@ Proyecto RocketYeah: que Claude Code **hable** como J.A.R.V.I.S., en versión fe
    4. ElevenLabs (streaming) ──► mpv: empieza a sonar antes de terminar de generarse
 ```
 
-| Evento de Claude Code | Qué hace Jarvis |
+| Evento de Claude Code | Qué hace Rachel |
 |---|---|
-| `SessionStart` | "Buenas noches, señor. ¿Qué vamos a romper hoy?" |
+| `SessionStart` | "Buenas noches, señor. ¿Viene a hacerme otra prueba Voight-Kampff?" |
 | `Stop` | Lee la respuesta (o su resumen hablado) |
 | `Notification` | "Señor, necesito su permiso para usar Bash. Prometo no incendiar nada." |
 | `UserPromptSubmit` | Se calla al instante: usted tiene la palabra |
@@ -27,7 +27,7 @@ Proyecto RocketYeah: que Claude Code **hable** como J.A.R.V.I.S., en versión fe
 
 Leer respuestas técnicas palabra por palabra suena a robot, por buena que sea la voz. Por eso hay dos capas:
 
-1. **Estilo de salida "Jarvis"** (`claude/output-styles/jarvis.md`): Claude abre cada respuesta con un *párrafo hablado* de 1–3 frases, escrito para el oído: sin símbolos, con ritmo y con humor negro británico. El detalle técnico va debajo, solo en pantalla.
+1. **Estilo de salida "Rachel"** (`claude/output-styles/rachel.md`): Claude abre cada respuesta con un *párrafo hablado* de 1–3 frases, escrito para el oído: sin símbolos, con ritmo y con humor negro británico. El detalle técnico va debajo, solo en pantalla.
 2. **Voz de ElevenLabs** bien afinada: modelo multilingüe, estabilidad media (más expresiva que monótona), streaming y frases cortas en caché.
 
 ## Puesta en marcha (≈10 minutos)
@@ -64,16 +64,16 @@ Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener e
 | `python talktome.py voices` | Listar tus voces con su ID |
 | `python talktome.py quota` | Caracteres disponibles en tu plan |
 | `python talktome.py stop` | Callar la frase en curso |
-| `python talktome.py mute` / `unmute` | Silenciar / reactivar a Jarvis |
+| `python talktome.py mute` / `unmute` | Silenciar / reactivar a Rachel |
 | `python talktome.py doctor` | Diagnóstico completo |
 
 Para que no hable en ejecuciones automáticas (por ejemplo `claude -p` en scripts), define la variable de entorno `TALKTOME_DISABLE=1`. Para apagarlo del todo: `"enabled": false` en la config.
 
-## Configuración (`jarvis.config.json`)
+## Configuración (`talktome.config.json`)
 
 | Clave | Valor por defecto | Notas |
 |---|---|---|
-| `honorific` | `"señor"` | Cómo te llama Jarvis |
+| `honorific` | `"señor"` | Cómo te llama Rachel |
 | `voice_id` | Lily (`pFZP5JQG7iQjIQuC4Bku`) | Provisional: británica, aterciopelada. `design` la reemplaza |
 | `model_id` | `eleven_multilingual_v2` | Ver tabla de modelos |
 | `voice_settings` | stability 0.4 · similarity 0.8 · style 0.35 · speed 0.97 | Menos stability = más emoción |
@@ -90,14 +90,14 @@ Para que no hable en ejecuciones automáticas (por ejemplo `claude -p` en script
 
 ## La voz: más humana que un humano
 
-Ella: británica de veintitantos, voz grave y aterciopelada, un punto ronca, íntima pero serena, que habla español con un leve acento inglés y humor negro impasible.
+Rachel: británica de veintitantos, voz grave y aterciopelada, un punto ronca, fría y enigmática como una heroína de cine negro pero cálida por dentro, que habla español con un leve acento inglés y humor negro impasible.
 
-1. **Voice Design, el camino recomendado.** `python talktome.py design` le describe esa voz a ElevenLabs (la descripción está en inglés porque así la sigue con más fidelidad), genera varias candidatas diciendo una frase en personaje, te las reproduce y guarda la que elijas en tu biblioteca y en `jarvis.config.json`. Con `r` generas otra tanda. Puedes pasar tu propia descripción con `--description "..."`. Cada tanda consume algunos créditos.
+1. **Voice Design, el camino recomendado.** `python talktome.py design` le describe esa voz a ElevenLabs (la descripción está en inglés porque así la sigue con más fidelidad), genera varias candidatas diciendo una frase en personaje, te las reproduce y guarda la que elijas en tu biblioteca y en `talktome.config.json`. Con `r` generas otra tanda. Puedes pasar tu propia descripción con `--description "..."`. Cada tanda consume algunos créditos.
 2. **Mientras tanto**, la voz por defecto es *Lily*, británica y aterciopelada pero algo mayor. Otras prediseñadas: `talktome.py voices`, y para probar una sin tocar la config: `ELEVENLABS_VOICE_ID=<id> python talktome.py say`.
 3. **Afinado fino** en `voice_settings`: `stability` 0.3–0.4 da más vida y picardía; `style` hasta ~0.45 da más interpretación (más arriba sobreactúa); `speed` 0.95–0.97 da la cadencia pausada y seductora.
 4. **Máxima expresividad**: `"model_id": "eleven_v3"` permite etiquetas como `[whispers]`, `[laughs softly]` o `[sarcastic]` en el párrafo hablado.
 
-> Ojo: no clones la voz de una actriz real sin su consentimiento; va contra los términos de ElevenLabs. Voice Design te da una voz propia y original.
+> Ojo: no clones la voz de una actriz real (tampoco la de Sean Young) sin su consentimiento; va contra los términos de ElevenLabs. Voice Design te da una voz propia y original.
 
 ## Costos
 
@@ -105,8 +105,8 @@ Solo se envía a ElevenLabs lo que se va a decir (normalmente 100–300 caracter
 
 ## Hoja de ruta
 
-- **Fase 1 — Jarvis habla** ✅ (este repo): voz, estilo, saludos, avisos, interrupción, caché.
-- **Fase 2 — Jarvis escucha**: dictado por voz hacia Claude Code. Hoy ya funciona sin código con el dictado del sistema (Windows `Win+H`, macOS doble `Fn`). Siguiente paso: push-to-talk con ElevenLabs Speech-to-Text (Scribe) y palabra de activación "Jarvis".
+- **Fase 1 — Rachel habla** ✅ (este repo): voz, estilo, saludos, avisos, interrupción, caché.
+- **Fase 2 — Rachel escucha**: dictado por voz hacia Claude Code. Hoy ya funciona sin código con el dictado del sistema (Windows `Win+H`, macOS doble `Fn`). Siguiente paso: push-to-talk con ElevenLabs Speech-to-Text (Scribe) y palabra de activación "Rachel".
 - **Fase 3 — Conversación fluida**: modo manos libres de ida y vuelta (voz → Claude Code → voz) con turnos, interrupciones naturales y resumen hablado del progreso de tareas largas.
 
 ## Desarrollo
@@ -115,4 +115,4 @@ Solo se envía a ElevenLabs lo que se va a decir (normalmente 100–300 caracter
 python -m unittest -v      # pruebas (sin red ni audio)
 ```
 
-Estructura: `jarvis/speakable.py` (markdown → habla), `transcript.py` (respuesta final), `tts.py` (ElevenLabs), `player.py` (audio, segundo plano, interrupción), `hooks.py` (eventos de Claude Code), `persona.py` (frases de Jarvis), `cli.py` (comandos). Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.
+Estructura: `voice/speakable.py` (markdown → habla), `transcript.py` (respuesta final), `tts.py` (ElevenLabs), `player.py` (audio, segundo plano, interrupción), `hooks.py` (eventos de Claude Code), `persona.py` (frases de Rachel), `cli.py` (comandos). Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.

@@ -1,4 +1,4 @@
-"""Configuration: jarvis.config.json + .env (API key) + environment overrides."""
+"""Configuration: talktome.config.json + .env (API key) + environment overrides."""
 import json
 import os
 from pathlib import Path
@@ -36,6 +36,15 @@ DEFAULTS = {
 }
 
 
+def config_path():
+    """talktome.config.json, or the legacy jarvis.config.json if that is what exists."""
+    if os.environ.get("TALKTOME_CONFIG"):
+        return Path(os.environ["TALKTOME_CONFIG"])
+    legacy = ROOT / "jarvis.config.json"
+    current = ROOT / "talktome.config.json"
+    return legacy if legacy.exists() and not current.exists() else current
+
+
 def _load_dotenv():
     env_file = ROOT / ".env"
     if not env_file.exists():
@@ -50,7 +59,7 @@ def _load_dotenv():
 def load():
     _load_dotenv()
     cfg = json.loads(json.dumps(DEFAULTS))
-    path = Path(os.environ.get("TALKTOME_CONFIG", ROOT / "jarvis.config.json"))
+    path = config_path()
     if path.exists():
         user = json.loads(path.read_text(encoding="utf-8"))
         settings = {**cfg["voice_settings"], **user.pop("voice_settings", {})}
@@ -65,8 +74,8 @@ def load():
 
 
 def save_voice_id(voice_id):
-    """Write the voice into jarvis.config.json, keeping the user's other keys."""
-    path = Path(os.environ.get("TALKTOME_CONFIG", ROOT / "jarvis.config.json"))
+    """Write the voice into the config file, keeping the user's other keys."""
+    path = config_path()
     data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
     data["voice_id"] = voice_id
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
