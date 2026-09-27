@@ -1,11 +1,12 @@
 import json
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from voice import persona, speakable, transcript
 from voice.config import DEFAULTS
-from voice.hooks import compose_reply
+from voice.hooks import compose_reply, handle, is_repeat
 
 ROCK = (Path(__file__).parent / "rockavionics_reply.md").read_text(encoding="utf-8")
 
@@ -95,6 +96,26 @@ class ComposeTest(unittest.TestCase):
 
     def test_short_reply_spoken_in_full(self):
         self.assertEqual(compose_reply("Hecho, **señor**.", self.cfg), "Hecho, señor.")
+
+
+class RepeatTest(unittest.TestCase):
+    def test_repeat_phrases(self):
+        for prompt in ("repite", "Repítelo, Rachel", "rachel, ¿qué dijiste?", "Otra vez por favor", "REPITE."):
+            self.assertTrue(is_repeat(prompt), prompt)
+        for prompt in ("repite el test con más datos", "no repitas código", "", "¿qué dijiste en el commit?"):
+            self.assertFalse(is_repeat(prompt), prompt)
+
+    def test_repeat_blocks_prompt_and_replays(self):
+        with mock.patch("voice.hooks.player") as player:
+            decision = handle("prompt", {"prompt": "repite"}, DEFAULTS)
+        self.assertEqual(decision["decision"], "block")
+        player.spawn.assert_called_once_with("_repeat")
+
+    def test_normal_prompt_only_interrupts(self):
+        with mock.patch("voice.hooks.player") as player:
+            self.assertIsNone(handle("prompt", {"prompt": "arregla el bug"}, DEFAULTS))
+        player.stop.assert_called_once()
+        player.spawn.assert_not_called()
 
 
 class TranscriptTest(unittest.TestCase):

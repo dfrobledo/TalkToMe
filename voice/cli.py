@@ -52,9 +52,12 @@ def cmd_hook(args, cfg):
     except ValueError:
         payload = {}
     try:
-        hooks.handle(args.event, payload, cfg)
+        decision = hooks.handle(args.event, payload, cfg)
     except Exception:
         _log_error()  # A voice failure must never break Claude Code.
+        return 0
+    if decision:
+        print(json.dumps(decision, ensure_ascii=False))
     return 0
 
 
@@ -63,6 +66,21 @@ def cmd_worker(args, cfg):
         hooks.work(args.kind, args.payload, cfg)
     except Exception:
         _log_error()
+    return 0
+
+
+def cmd_repeat(args, cfg):
+    player.claim()
+    try:
+        if not player.replay(cfg):
+            print("Todavía no hay ninguna respuesta que repetir.")
+    except Exception:
+        if args.command == "_repeat":
+            _log_error()  # Detached: nobody is watching the console.
+        else:
+            raise
+    finally:
+        player.release()
     return 0
 
 
@@ -175,6 +193,8 @@ def main(argv=None):
     p.add_argument("kind")
     p.add_argument("payload")
     p.set_defaults(fn=cmd_worker)
+    sub.add_parser("repite", aliases=["repeat"], help="repite la última respuesta").set_defaults(fn=cmd_repeat)
+    sub.add_parser("_repeat").set_defaults(fn=cmd_repeat)
     p = sub.add_parser("say", help="dice un texto (o una frase de prueba)")
     p.add_argument("text", nargs="*")
     p.set_defaults(fn=cmd_say)

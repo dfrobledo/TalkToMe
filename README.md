@@ -22,6 +22,7 @@ Proyecto RocketYeah: que Claude Code **hable** con la naturalidad de las convers
 | `Stop` | Lee la respuesta (o su resumen hablado) |
 | `Notification` | "Señor, necesito su permiso para usar Bash. Prometo no incendiar nada." |
 | `UserPromptSubmit` | Se calla al instante: usted tiene la palabra |
+| Escribes **"repite"** | Repite su última respuesta, sin gastar créditos ni turno de Claude |
 
 ## El truco para que suene humano
 
@@ -60,6 +61,7 @@ Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener e
 
 | Comando | Para qué |
 |---|---|
+| `python talktome.py repite` | Repite la última respuesta desde la terminal |
 | `python talktome.py say "texto"` | Decir algo (sin texto: frase de prueba) |
 | `python talktome.py design` | Crear su voz con Voice Design (ver abajo) |
 | `python talktome.py voices` | Listar tus voces con su ID |
@@ -69,6 +71,12 @@ Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener e
 | `python talktome.py doctor` | Diagnóstico completo |
 
 Para que no hable en ejecuciones automáticas (por ejemplo `claude -p` en scripts), define la variable de entorno `TALKTOME_DISABLE=1`. Para apagarlo del todo: `"enabled": false` en la config.
+
+## Que te repita algo
+
+Escribe **repite** en Claude Code y pulsa Enter. También sirven "repítelo", "otra vez", "¿qué dijiste?" o "no te escuché", con o sin "Rachel" y "por favor". Tiene que ser el mensaje completo: "repite la prueba con más datos" sigue yendo a Claude como siempre.
+
+Ese mensaje nunca llega a Claude: un hook lo intercepta, así que no consume tu plan ni aparece en la conversación. Rachel reproduce el audio guardado de su última respuesta, sin gastar créditos de ElevenLabs; solo si la habías interrumpido a mitad de frase la vuelve a generar completa.
 
 ## Configuración (`talktome.config.json`)
 

@@ -9,6 +9,8 @@ from . import tts
 from .config import ROOT, STATE_DIR
 
 PID_FILE = STATE_DIR / "speaking.pid"
+# Audio of the last reply, so "repite" costs no ElevenLabs characters.
+LAST_REPLY = STATE_DIR / "last-reply"
 # The worker has no console; on Windows each console program it starts
 # (ffplay, mpv, claude) would otherwise pop up a window of its own.
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -78,12 +80,52 @@ def play_mp3(data, cfg):
     return True
 
 
-def speak(text, cfg):
-    """Say `text` and block until done. Short phrases are cached on disk."""
+def _read(path):
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def _keep_reply(text, data, ext):
+    for old in ("mp3", "wav"):
+        LAST_REPLY.with_suffix(f".{old}").unlink(missing_ok=True)
+    LAST_REPLY.with_suffix(f".{ext}").write_bytes(data)
+    LAST_REPLY.with_suffix(".audio.txt").write_text(text, encoding="utf-8")
+
+
+def replay(cfg):
+    """Say the last reply again. Returns False if there is none.
+
+    Its saved audio is replayed for free; only if it was cut off halfway
+    (the user interrupted it) is it synthesized again.
+    """
+    text = _read(LAST_REPLY.with_suffix(".txt"))
+    if not text:
+        return False
+    if _read(LAST_REPLY.with_suffix(".audio.txt")) == text:
+        mp3, wav = LAST_REPLY.with_suffix(".mp3"), LAST_REPLY.with_suffix(".wav")
+        if mp3.exists() and play_mp3(mp3.read_bytes(), cfg):
+            return True
+        if wav.exists():
+            _play_wav(wav.read_bytes())
+            return True
+    speak(text, cfg, keep=True)
+    return True
+
+
+def speak(text, cfg, keep=False):
+    """Say `text` and block until done. Short phrases are cached on disk.
+
+    With keep=True the audio is also saved as the last reply for `replay`.
+    """
     text = text.strip()
     if not text:
         return
     cmd = _stream_cmd(cfg)
+    if keep:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        LAST_REPLY.with_suffix(".txt").write_text(text, encoding="utf-8")
     cacheable = len(text) <= cfg.get("cache_max_chars", 0)
     cached = tts.cache_path(text, cfg, "mp3" if cmd else "wav")
 
@@ -92,6 +134,8 @@ def speak(text, cfg):
         if cacheable and not cached.exists():
             cached.parent.mkdir(parents=True, exist_ok=True)
             cached.write_bytes(data)
+        if keep:
+            _keep_reply(text, data, "wav")
         _play_wav(data)
         return
 
@@ -113,6 +157,8 @@ def speak(text, cfg):
         except OSError:
             pass
         proc.wait()
+    if complete and keep:
+        _keep_reply(text, b"".join(audio), "mp3")
     if complete and cacheable and not cached.exists():
         cached.parent.mkdir(parents=True, exist_ok=True)
         cached.write_bytes(b"".join(audio))

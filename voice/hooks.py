@@ -5,7 +5,9 @@ that talks to ElevenLabs is handed to a detached worker (`player.spawn`).
 """
 import json
 import os
+import re
 import time
+import unicodedata
 
 from . import persona, player, speakable, summarizer, transcript
 from .config import STATE_DIR
@@ -62,12 +64,35 @@ def _enqueue(kind, payload):
     player.spawn("_speak", kind, str(path))
 
 
+REPEAT_WORDS = {
+    "repite", "repitelo", "repitemelo", "repiteme", "repite eso", "repitelo todo", "repetir",
+    "otra vez", "de nuevo", "que dijiste", "no te escuche", "no te oi",
+}
+
+
+def is_repeat(prompt):
+    """Is the whole prompt just asking Rachel to say her last reply again?"""
+    text = unicodedata.normalize("NFKD", (prompt or "").lower())
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"[^\w\s]", " ", text)
+    text = re.sub(r"\b(rachel|por favor|porfa|porfavor)\b", " ", text)
+    return " ".join(text.split()) in REPEAT_WORDS
+
+
 def handle(event, payload, cfg):
-    """Entry point for `talktome.py hook <event>`; never blocks on audio."""
+    """Entry point for `talktome.py hook <event>`; never blocks on audio.
+
+    Returns a hook decision for Claude Code, if any, to print as JSON.
+    """
     if event == "prompt":
+        if is_repeat(payload.get("prompt") or payload.get("prompt_text")):
+            player.stop()
+            player.spawn("_repeat")
+            # Blocked prompts never reach Claude: no turn, no tokens.
+            return {"decision": "block", "reason": "Rachel repite su última respuesta."}
         if cfg.get("interrupt_on_prompt", True):
             player.stop()
-        return
+        return None
     if os.environ.get("TALKTOME_DISABLE") or not cfg.get("enabled", True):
         return
     if cfg.get("muted") or not cfg.get("api_key"):
@@ -102,6 +127,6 @@ def work(kind, payload_file, cfg):
             text = compose_reply(_reply_from(payload), cfg, summarize=summarizer.summarize)
         if not text:
             return
-        player.speak(text, cfg)
+        player.speak(text, cfg, keep=kind == "reply")
     finally:
         player.release()
