@@ -112,11 +112,23 @@ Rachel: latinoamericana de veintitantos, voz grave y aterciopelada, un punto ron
 
 ## Costos
 
-Solo se envía a ElevenLabs lo que se va a decir (normalmente 100–300 caracteres por respuesta en modo `auto`). Saludos y avisos se guardan en caché local (`~/.talktome/cache`) y a partir de la segunda vez no gastan nada. Con `eleven_multilingual_v2` (1 crédito/carácter), unas 100 respuestas al día rondan los 20–30 mil créditos; con `eleven_flash_v2_5` es la mitad. Revisa tu saldo con `talktome.py quota`.
+Solo se envía a ElevenLabs lo que se va a decir: el resumen hablado, normalmente de 150 a 600 caracteres por respuesta en modo `auto`, con un tope de `summary_max_chars`. "Repite" reproduce el audio guardado y no gasta nada. Saludos y avisos se guardan en caché local (`~/.talktome/cache`) y a partir de la segunda vez no gastan nada. Con `eleven_multilingual_v2` (1 crédito/carácter), unas 100 respuestas al día rondan los 30–50 mil créditos; con `eleven_flash_v2_5` es la mitad. Revisa tu saldo con `talktome.py quota`.
+
+La red de seguridad (resumen generado cuando una respuesta no trae el suyo) usa tu plan de Claude, no ElevenLabs. Con el estilo Rachel activo casi nunca hace falta.
+
+## Problemas frecuentes
+
+| Síntoma | Causa y solución |
+|---|---|
+| `syntax error near unexpected token '&'` al abrir Claude Code | Instalación anterior a la corrección de rutas con espacios. `git pull` y `python install.py`. |
+| Rachel solo lee el primer párrafo y no tiene su tono | El proyecto usa otro estilo de salida (por ejemplo "Concise"), que gana sobre el de usuario. En ese proyecto: `/config` → Output style → Rachel. Si vuelve a cambiar, edita `outputStyle` en su `.claude/settings.json`. Mientras tanto, la red de seguridad genera el resumen (con unos segundos de espera). |
+| Acento de España | Voz generada antes del cambio a español latino: `python talktome.py design` (opción `--acento`). |
+| `Invalid API key` (401) | `python talktome.py doctor` muestra el principio y el final de la clave y de dónde sale (`.env` o una variable de entorno de Windows que tiene prioridad). |
+| No suena nada | `type $HOME\.talktome\talktome.log` muestra el error. |
 
 ## Hoja de ruta
 
-- **Fase 1 — Rachel habla** ✅ (este repo): voz, estilo, saludos, avisos, interrupción, caché.
+- **Fase 1 — Rachel habla** ✅ (este repo): voz latina diseñada a medida, estilo Rachel, resumen hablado de cada respuesta con la pregunta pendiente primero, red de seguridad, saludos, avisos que esperan su turno, interrupción al escribir, "repite" y caché.
 - **Fase 2 — Rachel escucha**: dictado por voz hacia Claude Code. Hoy ya funciona sin código con el dictado del sistema (Windows `Win+H`, macOS doble `Fn`). Siguiente paso: push-to-talk con ElevenLabs Speech-to-Text (Scribe) y palabra de activación "Rachel".
 - **Fase 3 — Conversación fluida**: modo manos libres de ida y vuelta (voz → Claude Code → voz) con turnos, interrupciones naturales y resumen hablado del progreso de tareas largas.
 
@@ -126,4 +138,4 @@ Solo se envía a ElevenLabs lo que se va a decir (normalmente 100–300 caracter
 python -m unittest -v      # pruebas (sin red ni audio)
 ```
 
-Estructura: `voice/speakable.py` (markdown → habla), `transcript.py` (respuesta final), `tts.py` (ElevenLabs), `player.py` (audio, segundo plano, interrupción), `hooks.py` (eventos de Claude Code), `persona.py` (frases de Rachel), `cli.py` (comandos). Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.
+Estructura: `voice/speakable.py` (markdown → habla, detección del resumen y de preguntas pendientes), `transcript.py` (respuesta final), `summarizer.py` (red de seguridad con `claude -p`), `tts.py` (ElevenLabs y Voice Design), `player.py` (audio, segundo plano, turnos, interrupción, repetir), `hooks.py` (eventos de Claude Code), `persona.py` (frases de Rachel), `cli.py` (comandos). `tests/` incluye respuestas reales de RockAvionics como casos de prueba. Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.
