@@ -9,6 +9,8 @@ from voice.config import DEFAULTS
 from voice.hooks import compose_reply, handle, is_repeat
 
 ROCK = (Path(__file__).parent / "rockavionics_reply.md").read_text(encoding="utf-8")
+# Opens with plain prose, but that prose misses the question it ends with.
+ROCK2 = (Path(__file__).parent / "rockavionics_reply2.md").read_text(encoding="utf-8")
 
 REPLY = """Listo, señor. Las pruebas pasan y el cambio está en la rama.
 
@@ -80,6 +82,22 @@ class ComposeTest(unittest.TestCase):
     def test_summarizer_failure_still_flags_the_question(self):
         said = compose_reply(ROCK, DEFAULTS, summarize=lambda *a: "")
         self.assertEqual(said, "Señor, necesito que me responda algo. Está en pantalla.")
+
+    def test_opening_without_the_question_is_not_a_summary(self):
+        calls = []
+        said = compose_reply(ROCK2, DEFAULTS, summarize=lambda r, c: calls.append(r) or "Señor, ¿ya tiene el Pi 3?")
+        self.assertEqual(calls, [ROCK2])
+        self.assertTrue(said.startswith("Señor, ¿ya tiene el Pi 3?"))
+
+    def test_opening_plus_heads_up_when_summarizer_fails(self):
+        said = compose_reply(ROCK2, DEFAULTS, summarize=lambda *a: "")
+        self.assertTrue(said.startswith("Sí. LoRa sigue en brainstorm"))
+        self.assertTrue(said.endswith("Señor, necesito que me responda algo. Está en pantalla."))
+
+    def test_summary_that_asks_is_kept(self):
+        reply = "Señor, ¿ya tiene el Pi 3? Mientras tanto reviso la norma.\n\n- detalle\n" + "x " * 300
+        said = compose_reply(reply, DEFAULTS, summarize=lambda *a: self.fail("no debía resumir"))
+        self.assertTrue(said.startswith("Señor, ¿ya tiene el Pi 3?"))
 
     def test_long_reply_speaks_lead_plus_pointer(self):
         said = compose_reply(REPLY, self.cfg)

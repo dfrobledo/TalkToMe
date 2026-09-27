@@ -107,9 +107,15 @@ def spoken_summary(markdown, keep_tags=False):
 
 
 ASKS = re.compile(
-    r"(\?|qu[eé] necesito de (ti|usted)|necesito que|pregunta\s*:|¿|decid(e|a|ir)|confirm(a|e|ar))",
+    r"(\?|qu[eé] necesito de (ti|usted)|necesito (que|su|una|saber)|pregunta\s*:|¿"
+    r"|decid(e|a|ir)|confirm(a|e|ar)|av[ií]s(ame|eme)|d[ií](me|game)\b|conect(a|e) )",
     re.I,
 )
+
+
+def asks(text):
+    """Does this (short) text ask the user for something anywhere?"""
+    return bool(ASKS.search(FENCE.sub("", text or "")))
 
 
 def needs_input(markdown):

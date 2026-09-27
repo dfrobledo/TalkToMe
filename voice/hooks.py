@@ -31,13 +31,20 @@ def compose_reply(markdown, cfg, summarize=None):
         return f"{text} {persona.more_on_screen(h)}" if cut else text
 
     limit = cfg.get("summary_max_chars", cfg["max_chars"])
-    text = speakable.spoken_summary(markdown, keep_tags=keep_tags)
+    opening = speakable.spoken_summary(markdown, keep_tags=keep_tags)
+    waiting = speakable.needs_input(markdown)
+    # A real summary carries the question the reply ends with; an opening
+    # paragraph that misses it is just the start of the answer.
+    text = opening if opening and (speakable.asks(opening) or not waiting) else ""
     if not text and summarize:
         text = speakable.to_speech(summarize(markdown, cfg), keep_tags=keep_tags).replace("\n\n", " ")
     if text:
         text, _ = speakable.truncate(text, limit)
         return text if text == full else f"{text} {persona.more_on_screen(h)}"
-    if speakable.needs_input(markdown):
+    if waiting:
+        if opening:
+            opening, _ = speakable.truncate(opening, limit)
+            return f"{opening} {persona.needs_answer(h)}"
         return persona.needs_answer(h)
     return persona.done(h)
 
