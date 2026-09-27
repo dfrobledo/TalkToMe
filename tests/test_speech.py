@@ -7,6 +7,8 @@ from voice import persona, speakable, transcript
 from voice.config import DEFAULTS
 from voice.hooks import compose_reply
 
+ROCK = (Path(__file__).parent / "rockavionics_reply.md").read_text(encoding="utf-8")
+
 REPLY = """Listo, señor. Las pruebas pasan y el cambio está en la rama.
 
 ## Cambios
@@ -31,13 +33,19 @@ class SpeakableTest(unittest.TestCase):
         self.assertIn("Ver el PR.", spoken)
         self.assertIn("Le dejé el código en pantalla.", spoken)
 
-    def test_lead_is_first_prose_paragraph(self):
+    def test_summary_is_first_prose_paragraph(self):
         self.assertEqual(
-            speakable.lead(REPLY), "Listo, señor. Las pruebas pasan y el cambio está en la rama."
+            speakable.spoken_summary(REPLY), "Listo, señor. Las pruebas pasan y el cambio está en la rama."
         )
 
-    def test_lead_skips_leading_heading_and_list(self):
-        self.assertEqual(speakable.lead("# Título\n\n- uno\n\nHola, señor."), "Hola, señor.")
+    def test_no_summary_when_reply_opens_with_structure(self):
+        for reply in ("# Título\n\nHola, señor.", "Encontré esto:\n\n- uno", "Contexto\n- uno\n- dos"):
+            self.assertEqual(speakable.spoken_summary(reply), "", reply)
+        self.assertEqual(speakable.spoken_summary(ROCK), "")
+
+    def test_needs_input(self):
+        self.assertTrue(speakable.needs_input(ROCK))
+        self.assertFalse(speakable.needs_input("Listo, señor. Todo en verde."))
 
     def test_audio_tags_only_kept_for_v3(self):
         self.assertEqual(speakable.to_speech("[sighs] Otra vez, señor."), "Otra vez, señor.")
@@ -52,6 +60,25 @@ class SpeakableTest(unittest.TestCase):
 
 class ComposeTest(unittest.TestCase):
     cfg = {**DEFAULTS, "max_chars": 120}
+
+    def test_missing_summary_is_generated(self):
+        calls = []
+
+        def fake(reply, cfg):
+            calls.append(reply)
+            return "Señor, necesito saber si el Pi ya enciende. Meshtastic queda descartado."
+
+        said = compose_reply(ROCK, DEFAULTS, summarize=fake)
+        self.assertEqual(calls, [ROCK])
+        self.assertTrue(said.startswith("Señor, necesito saber si el Pi ya enciende."))
+
+    def test_existing_summary_skips_summarizer(self):
+        said = compose_reply(REPLY, self.cfg, summarize=lambda *a: self.fail("no debía resumir"))
+        self.assertTrue(said.startswith("Listo, señor."))
+
+    def test_summarizer_failure_still_flags_the_question(self):
+        said = compose_reply(ROCK, DEFAULTS, summarize=lambda *a: "")
+        self.assertEqual(said, "Señor, necesito que me responda algo. Está en pantalla.")
 
     def test_long_reply_speaks_lead_plus_pointer(self):
         said = compose_reply(REPLY, self.cfg)

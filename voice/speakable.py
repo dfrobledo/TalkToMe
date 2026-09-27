@@ -84,17 +84,38 @@ def to_speech(markdown, code_phrase="Le dejé el código en pantalla.", keep_tag
     return "\n\n".join(out).strip()
 
 
-def lead(markdown, keep_tags=False):
-    """First speakable prose paragraph: the 'spoken summary' of a reply."""
-    without_code = FENCE.sub("\n\n", markdown or "")
-    for block in re.split(r"\n\s*\n", without_code):
-        first = block.strip().splitlines()[0].strip() if block.strip() else ""
-        if not first or first.startswith(("#", "|", ">")) or LIST_MARKER.match(first):
-            continue
-        spoken = to_speech(block, keep_tags=keep_tags)
-        if re.search(r"\w", spoken):
-            return spoken
-    return ""
+def spoken_summary(markdown, keep_tags=False):
+    """The reply's opening paragraph, only if it really is a spoken summary.
+
+    A summary is the very first block and pure prose: no headings, lists,
+    tables, code or a colon that introduces a list. Anything else means the
+    reply did not follow the Rachel style (e.g. a project's own format won).
+    """
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", (markdown or "").strip()) if b.strip()]
+    if not blocks:
+        return ""
+    first = blocks[0]
+    lines = [line.strip() for line in first.splitlines()]
+    if "`" in first or any(
+        line.startswith(("#", "|", ">")) or LIST_MARKER.match(line) for line in lines
+    ):
+        return ""
+    if first.rstrip().endswith(":") or not re.search(r"[.!?…]", first):
+        return ""
+    spoken = to_speech(first, keep_tags=keep_tags)
+    return spoken if len(spoken) >= 15 else ""
+
+
+ASKS = re.compile(
+    r"(\?|qu[eé] necesito de (ti|usted)|necesito que|pregunta\s*:|¿|decid(e|a|ir)|confirm(a|e|ar))",
+    re.I,
+)
+
+
+def needs_input(markdown):
+    """Does the reply end by asking the user for something?"""
+    tail = FENCE.sub("", markdown or "").strip()[-700:]
+    return bool(ASKS.search(tail))
 
 
 def truncate(text, max_chars):

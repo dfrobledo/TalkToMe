@@ -44,5 +44,13 @@ def notification(payload, h):
     return f"{h.capitalize()}, requiero su atención un momento."
 
 
+def needs_answer(h):
+    return f"{h.capitalize()}, necesito que me responda algo. Está en pantalla."
+
+
+def done(h):
+    return f"Listo, {h}. El detalle está en pantalla."
+
+
 def more_on_screen(h):
     return f"El detalle está en pantalla, {h}."

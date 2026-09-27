@@ -30,6 +30,9 @@ DEFAULTS = {
     "max_chars": 450,
     # The spoken summary covers the whole reply, so it gets more room.
     "summary_max_chars": 650,
+    # Layer 2: when a reply has no spoken summary, have Claude write one.
+    # "claude" uses the Claude Code CLI on your plan; "off" disables it.
+    "summarizer": "claude",
     "greet_on_start": True,
     "speak_notifications": True,
     "interrupt_on_prompt": True,

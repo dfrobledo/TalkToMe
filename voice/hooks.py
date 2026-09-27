@@ -7,12 +7,17 @@ import json
 import os
 import time
 
-from . import persona, player, speakable, transcript
+from . import persona, player, speakable, summarizer, transcript
 from .config import STATE_DIR
 
 
-def compose_reply(markdown, cfg):
-    """Decide what Rachel says about a reply, given the configured mode."""
+def compose_reply(markdown, cfg, summarize=None):
+    """Decide what Rachel says about a reply, given the configured mode.
+
+    Order of preference: the whole reply if it is short, the spoken summary
+    Claude wrote at the top, a summary made on the spot by `summarize`
+    (layer 2), and as a last resort a plain heads-up.
+    """
     keep_tags = cfg["model_id"] == "eleven_v3"
     h = cfg["honorific"]
     full = speakable.to_speech(markdown, keep_tags=keep_tags)
@@ -22,9 +27,17 @@ def compose_reply(markdown, cfg):
     if mode == "full" or (mode == "auto" and len(full) <= cfg["max_chars"]):
         text, cut = speakable.truncate(full, cfg["max_chars"])
         return f"{text} {persona.more_on_screen(h)}" if cut else text
-    text = speakable.lead(markdown, keep_tags=keep_tags) or full
-    text, _ = speakable.truncate(text, cfg.get("summary_max_chars", cfg["max_chars"]))
-    return text if text == full else f"{text} {persona.more_on_screen(h)}"
+
+    limit = cfg.get("summary_max_chars", cfg["max_chars"])
+    text = speakable.spoken_summary(markdown, keep_tags=keep_tags)
+    if not text and summarize:
+        text = speakable.to_speech(summarize(markdown, cfg), keep_tags=keep_tags).replace("\n\n", " ")
+    if text:
+        text, _ = speakable.truncate(text, limit)
+        return text if text == full else f"{text} {persona.more_on_screen(h)}"
+    if speakable.needs_input(markdown):
+        return persona.needs_answer(h)
+    return persona.done(h)
 
 
 def _reply_from(payload):
@@ -79,11 +92,16 @@ def work(kind, payload_file, cfg):
             os.remove(payload_file)
         except OSError:
             pass
-    text = payload["text"] if kind == "say" else compose_reply(_reply_from(payload), cfg)
-    if not text:
-        return
+    # Claim first: if the user types while a summary is being written, the
+    # prompt hook interrupts this worker before it says something stale.
     player.claim()
     try:
+        if kind == "say":
+            text = payload["text"]
+        else:
+            text = compose_reply(_reply_from(payload), cfg, summarize=summarizer.summarize)
+        if not text:
+            return
         player.speak(text, cfg)
     finally:
         player.release()

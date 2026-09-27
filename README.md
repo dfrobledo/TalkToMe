@@ -25,10 +25,11 @@ Proyecto RocketYeah: que Claude Code **hable** con la naturalidad de las convers
 
 ## El truco para que suene humano
 
-Leer respuestas técnicas palabra por palabra suena a robot, por buena que sea la voz. Por eso hay dos capas:
+Leer respuestas técnicas palabra por palabra suena a robot, por buena que sea la voz. Por eso hay tres capas:
 
 1. **Estilo de salida "Rachel"** (`claude/output-styles/rachel.md`): Claude abre cada respuesta con un *resumen hablado* de toda la respuesta (conclusión, cada elemento relevante, datos clave, riesgos y siguiente paso), escrito para el oído: sin símbolos, con ritmo y con humor negro británico. Su largo se adapta: una frase si la respuesta es trivial, hasta cinco si es grande. El detalle técnico va debajo, solo en pantalla.
-2. **Voz de ElevenLabs** bien afinada: modelo multilingüe, estabilidad media (más expresiva que monótona), streaming y frases cortas en caché.
+2. **Red de seguridad**: si una respuesta no trae resumen hablado (por ejemplo, porque el `CLAUDE.md` de un proyecto impone su propio formato), TalkToMe se lo pide en segundo plano a Claude Code (`claude -p` con Sonnet y esfuerzo bajo, usando tu plan, sin herramientas y sin guardar la sesión). Tarda unos segundos más y sigue las mismas reglas: si te piden algo, eso va primero. Si esa llamada falla, al menos te avisa: "Señor, necesito que me responda algo. Está en pantalla."
+3. **Voz de ElevenLabs** bien afinada: modelo multilingüe, estabilidad media (más expresiva que monótona), streaming y frases cortas en caché.
 
 ## Puesta en marcha (≈10 minutos)
 
@@ -80,6 +81,7 @@ Para que no hable en ejecuciones automáticas (por ejemplo `claude -p` en script
 | `mode` | `auto` | `auto`, `lead` (solo el resumen hablado) o `full` |
 | `max_chars` | 450 | En `auto`, respuestas hasta este largo se leen completas |
 | `summary_max_chars` | 650 | Tope del resumen hablado: protege tus créditos |
+| `summarizer` | `"claude"` | Red de seguridad para respuestas sin resumen; `"off"` la apaga |
 | `greet_on_start`, `speak_notifications`, `interrupt_on_prompt` | `true` | |
 | `player` | `auto` | `mpv`, `ffplay` o `auto` |
 

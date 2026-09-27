@@ -9,6 +9,9 @@ from . import tts
 from .config import ROOT, STATE_DIR
 
 PID_FILE = STATE_DIR / "speaking.pid"
+# The worker has no console; on Windows each console program it starts
+# (ffplay, mpv, claude) would otherwise pop up a window of its own.
+NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 LOG_FILE = STATE_DIR / "talktome.log"
 
 # Streaming players start talking while ElevenLabs is still generating.
@@ -71,7 +74,7 @@ def play_mp3(data, cfg):
     cmd = _stream_cmd(cfg)
     if not cmd:
         return False
-    subprocess.run(cmd, input=data, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    subprocess.run(cmd, input=data, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
     return True
 
 
@@ -93,7 +96,8 @@ def speak(text, cfg):
         return
 
     chunks = [cached.read_bytes()] if cached.exists() else tts.stream(text, cfg)
-    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                            creationflags=NO_WINDOW)
     audio, complete = [], False
     try:
         for chunk in chunks:
@@ -124,7 +128,7 @@ def stop():
         return False
     try:
         if sys.platform == "win32":
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], creationflags=NO_WINDOW,
                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         else:
             os.killpg(pid, signal.SIGTERM)
