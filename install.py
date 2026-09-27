@@ -28,14 +28,24 @@ def _uses_powershell():
     """Claude Code runs hooks with Git Bash on Windows, PowerShell without it."""
     if os.name != "nt":
         return False
+    local = os.environ.get("LOCALAPPDATA", "")
     candidates = [os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"), shutil.which("bash"),
-                  r"C:\Program Files\Git\bin\bash.exe"]
+                  r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files (x86)\Git\bin\bash.exe",
+                  os.path.join(local, "Programs", "Git", "bin", "bash.exe")]
     return not any(c and Path(c).exists() for c in candidates)
 
 
-def hook_command(event):
-    python = Path(sys.executable).as_posix()
-    launcher = (ROOT / "talktome.py").as_posix()
+def hook_command(event, python=None, launcher=None):
+    """A command line that runs the same under Git Bash and PowerShell.
+
+    Paths without spaces go unquoted: both shells accept that. Only a quoted
+    path needs PowerShell's call operator, which bash rejects, so that is the
+    single case where we have to guess the shell.
+    """
+    python = Path(python or sys.executable).as_posix()
+    launcher = Path(launcher or ROOT / "talktome.py").as_posix()
+    if " " not in python + launcher:
+        return f"{python} {launcher} hook {event}"
     call = "& " if _uses_powershell() else ""
     return f'{call}"{python}" "{launcher}" hook {event}'
 
