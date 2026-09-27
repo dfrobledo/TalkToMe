@@ -1,0 +1,158 @@
+"""Audio playback, background workers and interruption."""
+import os
+import shutil
+import signal
+import subprocess
+import sys
+
+from . import tts
+from .config import ROOT, STATE_DIR
+
+PID_FILE = STATE_DIR / "speaking.pid"
+LOG_FILE = STATE_DIR / "talktome.log"
+
+# Streaming players start talking while ElevenLabs is still generating.
+STREAM_PLAYERS = {
+    "mpv": ["mpv", "--no-video", "--really-quiet", "--no-terminal", "-"],
+    "ffplay": ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", "-"],
+}
+# Fallbacks: wait for the whole utterance, then play a WAV file.
+FILE_PLAYERS = {
+    "afplay": ["afplay"],
+    "paplay": ["paplay"],
+    "pw-play": ["pw-play"],
+    "aplay": ["aplay", "-q"],
+}
+
+
+def _stream_cmd(cfg):
+    choice = cfg.get("player", "auto")
+    names = list(STREAM_PLAYERS) if choice == "auto" else [choice]
+    for name in names:
+        if name in STREAM_PLAYERS and shutil.which(name):
+            return STREAM_PLAYERS[name]
+    return None
+
+
+def _file_cmd():
+    for name, cmd in FILE_PLAYERS.items():
+        if shutil.which(name):
+            return cmd
+    return None
+
+
+def describe(cfg):
+    cmd = _stream_cmd(cfg)
+    if cmd:
+        return f"{cmd[0]} (streaming, baja latencia)"
+    if sys.platform == "win32":
+        return "winsound (sin streaming; instala mpv para menor latencia)"
+    cmd = _file_cmd()
+    return f"{cmd[0]} (sin streaming)" if cmd else None
+
+
+def _play_wav(data):
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = STATE_DIR / "last.wav"
+    path.write_bytes(data)
+    if sys.platform == "win32":
+        import winsound
+
+        winsound.PlaySound(str(path), winsound.SND_FILENAME)
+        return
+    cmd = _file_cmd()
+    if not cmd:
+        raise tts.TTSError("No hay reproductor de audio: instala mpv o ffmpeg.")
+    subprocess.run(cmd + [str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def speak(text, cfg):
+    """Say `text` and block until done. Short phrases are cached on disk."""
+    text = text.strip()
+    if not text:
+        return
+    cmd = _stream_cmd(cfg)
+    cacheable = len(text) <= cfg.get("cache_max_chars", 0)
+    cached = tts.cache_path(text, cfg, "mp3" if cmd else "wav")
+
+    if not cmd:
+        data = cached.read_bytes() if cached.exists() else tts.wav(text, cfg)
+        if cacheable and not cached.exists():
+            cached.parent.mkdir(parents=True, exist_ok=True)
+            cached.write_bytes(data)
+        _play_wav(data)
+        return
+
+    chunks = [cached.read_bytes()] if cached.exists() else tts.stream(text, cfg)
+    proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    audio, complete = [], False
+    try:
+        for chunk in chunks:
+            proc.stdin.write(chunk)
+            proc.stdin.flush()
+            audio.append(chunk)
+        complete = True
+    except (BrokenPipeError, OSError):
+        pass  # Player was killed: we got interrupted.
+    finally:
+        try:
+            proc.stdin.close()
+        except OSError:
+            pass
+        proc.wait()
+    if complete and cacheable and not cached.exists():
+        cached.parent.mkdir(parents=True, exist_ok=True)
+        cached.write_bytes(b"".join(audio))
+
+
+def stop():
+    """Silence whatever is being said right now."""
+    try:
+        pid = int(PID_FILE.read_text())
+    except (OSError, ValueError):
+        return False
+    if pid == os.getpid():
+        return False
+    try:
+        if sys.platform == "win32":
+            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        else:
+            os.killpg(pid, signal.SIGTERM)
+    except (OSError, ProcessLookupError):
+        pass
+    try:
+        PID_FILE.unlink()
+    except OSError:
+        pass
+    return True
+
+
+def claim():
+    """Mark this process as the current speaker, interrupting the previous one."""
+    stop()
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    PID_FILE.write_text(str(os.getpid()))
+
+
+def release():
+    try:
+        if int(PID_FILE.read_text()) == os.getpid():
+            PID_FILE.unlink()
+    except (OSError, ValueError):
+        pass
+
+
+def spawn(*args):
+    """Run `talktome.py <args>` detached so Claude Code never waits on audio."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    cmd = [sys.executable, str(ROOT / "talktome.py"), *args]
+    kwargs = dict(stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True)
+    if sys.platform == "win32":
+        flags = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
+        try:
+            subprocess.Popen(cmd, creationflags=flags | subprocess.CREATE_BREAKAWAY_FROM_JOB, **kwargs)
+        except OSError:
+            subprocess.Popen(cmd, creationflags=flags, **kwargs)
+    else:
+        subprocess.Popen(cmd, start_new_session=True, **kwargs)

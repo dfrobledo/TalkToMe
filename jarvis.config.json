@@ -1,0 +1,18 @@
+{
+  "honorific": "señor",
+  "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+  "model_id": "eleven_multilingual_v2",
+  "voice_settings": {
+    "stability": 0.45,
+    "similarity_boost": 0.8,
+    "style": 0.3,
+    "use_speaker_boost": true,
+    "speed": 1.0
+  },
+  "mode": "auto",
+  "max_chars": 450,
+  "greet_on_start": true,
+  "speak_notifications": true,
+  "interrupt_on_prompt": true,
+  "player": "auto"
+}
