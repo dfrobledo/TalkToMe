@@ -24,30 +24,37 @@ MARKER = "talktome.py"
 EVENTS = {"SessionStart": "session", "UserPromptSubmit": "prompt", "Notification": "notification", "Stop": "stop"}
 
 
-def _uses_powershell():
-    """Claude Code runs hooks with Git Bash on Windows, PowerShell without it."""
-    if os.name != "nt":
-        return False
-    local = os.environ.get("LOCALAPPDATA", "")
-    candidates = [os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"), shutil.which("bash"),
-                  r"C:\Program Files\Git\bin\bash.exe", r"C:\Program Files (x86)\Git\bin\bash.exe",
-                  os.path.join(local, "Programs", "Git", "bin", "bash.exe")]
-    return not any(c and Path(c).exists() for c in candidates)
+def _on_path(python):
+    """A bare command name (python, py...) that runs this same interpreter."""
+    for name in ("python", "python3", "py"):
+        found = shutil.which(name)
+        try:
+            if found and Path(found).samefile(python):
+                return name
+        except OSError:
+            continue
+    return None
 
 
-def hook_command(event, python=None, launcher=None):
-    """A command line that runs the same under Git Bash and PowerShell.
+def hook_entry(event, python=None, launcher=None):
+    """Hook definition that runs the same under Git Bash and PowerShell.
 
-    Paths without spaces go unquoted: both shells accept that. Only a quoted
-    path needs PowerShell's call operator, which bash rejects, so that is the
-    single case where we have to guess the shell.
+    The first word of the command is what differs between shells: bash takes
+    a quoted path as is, PowerShell needs `& "..."`, which bash rejects. So the
+    interpreter goes unquoted (plain path or its name on PATH); arguments may
+    be quoted in both. Only if neither is possible do we pin PowerShell.
     """
-    python = Path(python or sys.executable).as_posix()
+    python = Path(python or sys.executable)
     launcher = Path(launcher or ROOT / "talktome.py").as_posix()
-    if " " not in python + launcher:
-        return f"{python} {launcher} hook {event}"
-    call = "& " if _uses_powershell() else ""
-    return f'{call}"{python}" "{launcher}" hook {event}'
+    script = f'"{launcher}"' if " " in launcher else launcher
+    entry = {"type": "command", "timeout": 10}
+    exe = python.as_posix() if " " not in python.as_posix() else _on_path(python)
+    if exe:
+        entry["command"] = f"{exe} {script} hook {event}"
+    else:
+        entry["command"] = f'& "{python.as_posix()}" "{launcher}" hook {event}'
+        entry["shell"] = "powershell"
+    return entry
 
 
 def _strip_ours(hooks):
@@ -85,7 +92,7 @@ def main():
     else:
         for event, name in EVENTS.items():
             hooks.setdefault(event, []).append(
-                {"hooks": [{"type": "command", "command": hook_command(name), "timeout": 10}]}
+                {"hooks": [hook_entry(name)]}
             )
         STYLE_DST.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(STYLE_SRC, STYLE_DST)
@@ -103,6 +110,7 @@ def main():
         print(f"TalkToMe desinstalado de {SETTINGS}.")
         return
     print(f"Hooks instalados en {SETTINGS}")
+    print(f"  comando: {hook_entry('stop')['command']}")
     print(f"Estilo Rachel copiado a {STYLE_DST}" + ("" if args.no_style else " y activado"))
     if not (ROOT / ".env").exists():
         print("Siguiente paso: copia .env.example a .env y pon tu ELEVENLABS_API_KEY.")
