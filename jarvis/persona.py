@@ -8,9 +8,10 @@ import re
 from datetime import datetime
 
 GREETINGS = [
-    "Todos los sistemas en línea.",
-    "A su disposición.",
-    "¿En qué trabajamos hoy?",
+    "Todos los sistemas en línea. De momento.",
+    "Lo estaba esperando. Más o menos.",
+    "¿Qué vamos a romper hoy?",
+    "Café servido, errores pendientes. Lo de siempre.",
 ]
 
 
@@ -35,11 +36,11 @@ def notification(payload, h):
         return ""
     tool = re.search(r"permission to use (.+?)\.?$", message)
     if tool:
-        return f"Disculpe, {h}. Necesito su autorización para usar {tool.group(1)}."
+        return f"{h.capitalize()}, necesito su permiso para usar {tool.group(1)}. Prometo no incendiar nada."
     if kind == "permission_prompt" or "permission" in message.lower():
         return f"Disculpe, {h}. Necesito su autorización para continuar."
     if kind == "idle_prompt" or "waiting for your input" in message.lower():
-        return f"Sigo a la espera de sus instrucciones, {h}."
+        return f"Sigo aquí, {h}. Esperándolo, como siempre."
     return f"{h.capitalize()}, requiero su atención un momento."
 
 

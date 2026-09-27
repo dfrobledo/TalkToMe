@@ -1,5 +1,6 @@
 """talktome: Claude Code con la voz de Jarvis (ElevenLabs)."""
 import argparse
+import base64
 import json
 import sys
 import traceback
@@ -8,8 +9,23 @@ from . import config, hooks, player, tts
 from .player import LOG_FILE
 
 SAMPLE = (
-    "Buenas, {h}. He revisado el repositorio: las pruebas pasan y el despliegue está listo. "
-    "Si me permite una observación, quizá convendría dormir antes del lanzamiento."
+    "Buenas noches, {h}. Las pruebas pasan y el despliegue está listo. "
+    "Si me permite una observación, quizá convendría dormir antes del lanzamiento... "
+    "aunque entiendo que el insomnio tiene su encanto."
+)
+
+# Voice Design follows English briefs more faithfully; the voice still speaks Spanish.
+VOICE_BRIEF = (
+    "A young British woman in her mid-twenties with a low, velvety, slightly husky voice. "
+    "Sultry, warm and intimate yet perfectly composed, with a soft, close-to-the-microphone delivery. "
+    "Elegant received-pronunciation diction and a dry, deadpan, darkly witty tone. "
+    "Unhurried, confident pacing with playful pauses. She speaks fluent Spanish with a subtle, "
+    "refined British accent. Studio-quality recording."
+)
+DESIGN_TEXT = (
+    "Buenas noches, {h}. He revisado su código con todo el cariño que se merece... "
+    "y he encontrado tres errores, un bucle infinito y algo que parece una declaración de guerra "
+    "contra la lógica. Descuide, ya lo arreglé. Usted limítese a poner cara de que lo tenía previsto."
 )
 
 
@@ -48,6 +64,37 @@ def cmd_say(args, cfg):
     finally:
         player.release()
     return 0
+
+
+def cmd_design(args, cfg):
+    description = args.description or VOICE_BRIEF
+    text = DESIGN_TEXT.format(h=cfg["honorific"])
+    out = config.STATE_DIR / "design"
+    out.mkdir(parents=True, exist_ok=True)
+    while True:
+        print("Diseñando voces candidatas (unos segundos)...")
+        previews = tts.design(description, text, cfg)
+        played = True
+        for i, preview in enumerate(previews, 1):
+            audio = base64.b64decode(preview["audio_base_64"])
+            path = out / f"voz-{i}.mp3"
+            path.write_bytes(audio)
+            print(f"  [{i}] {path}")
+            if not args.no_play:
+                played = player.play_mp3(audio, cfg) and played
+        if args.no_play or not played:
+            print("Abre los .mp3 de arriba para escucharlas.")
+        choice = input("¿Con cuál se queda? número · r = generar otras · Enter = cancelar: ").strip().lower()
+        if choice == "r":
+            continue
+        if not choice.isdigit() or not 1 <= int(choice) <= len(previews):
+            print("Cancelado; la voz actual no cambia.")
+            return 0
+        voice_id = tts.save_voice(args.name, description, previews[int(choice) - 1]["generated_voice_id"], cfg)
+        path = config.save_voice_id(voice_id)
+        print(f"Voz '{args.name}' guardada en su biblioteca ({voice_id}) y activada en {path.name}.")
+        print("Pruébela: python talktome.py say")
+        return 0
 
 
 def cmd_voices(args, cfg):
@@ -109,6 +156,11 @@ def main(argv=None):
     p = sub.add_parser("say", help="dice un texto (o una frase de prueba)")
     p.add_argument("text", nargs="*")
     p.set_defaults(fn=cmd_say)
+    p = sub.add_parser("design", help="crea la voz de ella con Voice Design")
+    p.add_argument("--description", help="descripción de la voz (por defecto, la de Jarvis)")
+    p.add_argument("--name", default="Jarvis", help="nombre en tu biblioteca de ElevenLabs")
+    p.add_argument("--no-play", action="store_true", help="solo guardar los .mp3")
+    p.set_defaults(fn=cmd_design)
     sub.add_parser("voices", help="lista tus voces de ElevenLabs").set_defaults(fn=cmd_voices)
     sub.add_parser("quota", help="caracteres disponibles").set_defaults(fn=cmd_quota)
     sub.add_parser("doctor", help="verifica la instalación").set_defaults(fn=cmd_doctor)

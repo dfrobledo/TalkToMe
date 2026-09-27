@@ -9,19 +9,20 @@ STATE_DIR = Path(os.environ.get("TALKTOME_STATE", Path.home() / ".talktome"))
 DEFAULTS = {
     "enabled": True,
     "honorific": "señor",
-    # George: warm, calm British male. Change with `talktome voices`.
-    "voice_id": "JBFqnCBsd6RMkjVDRZzb",
+    # Lily: velvety British female, a stand-in until `talktome design`
+    # creates her own voice.
+    "voice_id": "pFZP5JQG7iQjIQuC4Bku",
     # eleven_multilingual_v2: most natural Spanish.
     # eleven_flash_v2_5: ~75 ms latency, slightly less nuance.
     # eleven_v3: most expressive, understands [sighs], [dry] style tags.
     "model_id": "eleven_multilingual_v2",
     "language_code": "es",
     "voice_settings": {
-        "stability": 0.45,
+        "stability": 0.4,
         "similarity_boost": 0.8,
-        "style": 0.3,
+        "style": 0.35,
         "use_speaker_boost": True,
-        "speed": 1.0,
+        "speed": 0.97,
     },
     # auto: short replies in full, long ones only their opening paragraph.
     # lead: always the opening paragraph. full: everything (up to max_chars).
@@ -61,6 +62,15 @@ def load():
     cfg["api_key"] = os.environ.get("ELEVENLABS_API_KEY", "")
     cfg["muted"] = (STATE_DIR / "muted").exists()
     return cfg
+
+
+def save_voice_id(voice_id):
+    """Write the voice into jarvis.config.json, keeping the user's other keys."""
+    path = Path(os.environ.get("TALKTOME_CONFIG", ROOT / "jarvis.config.json"))
+    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+    data["voice_id"] = voice_id
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return path
 
 
 def set_muted(muted):

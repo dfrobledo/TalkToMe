@@ -66,6 +66,15 @@ def _play_wav(data):
     subprocess.run(cmd + [str(path)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
+def play_mp3(data, cfg):
+    """Play an mp3 already in memory. Returns False if no player can do it."""
+    cmd = _stream_cmd(cfg)
+    if not cmd:
+        return False
+    subprocess.run(cmd, input=data, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return True
+
+
 def speak(text, cfg):
     """Say `text` and block until done. Short phrases are cached on disk."""
     text = text.strip()

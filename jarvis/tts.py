@@ -74,6 +74,20 @@ def cache_path(text, cfg, ext):
     return STATE_DIR / "cache" / f"{digest}.{ext}"
 
 
+def design(description, sample_text, cfg):
+    """Voice Design: generate candidate voices from a text description."""
+    body = {"voice_description": description, "text": sample_text, "model_id": "eleven_ttv_v3"}
+    with _request("/text-to-voice/design?output_format=mp3_44100_128", cfg, body, "POST") as resp:
+        return json.load(resp).get("previews", [])
+
+
+def save_voice(name, description, generated_voice_id, cfg):
+    """Keep a designed preview in the user's voice library; returns its voice_id."""
+    body = {"voice_name": name, "voice_description": description, "generated_voice_id": generated_voice_id}
+    with _request("/text-to-voice", cfg, body, "POST") as resp:
+        return json.load(resp)["voice_id"]
+
+
 def voices(cfg):
     with _request("/voices", cfg) as resp:
         return json.load(resp).get("voices", [])
