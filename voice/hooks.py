@@ -23,7 +23,7 @@ def compose_reply(markdown, cfg):
         text, cut = speakable.truncate(full, cfg["max_chars"])
         return f"{text} {persona.more_on_screen(h)}" if cut else text
     text = speakable.lead(markdown, keep_tags=keep_tags) or full
-    text, _ = speakable.truncate(text, cfg["max_chars"])
+    text, _ = speakable.truncate(text, cfg.get("summary_max_chars", cfg["max_chars"]))
     return text if text == full else f"{text} {persona.more_on_screen(h)}"
 
 

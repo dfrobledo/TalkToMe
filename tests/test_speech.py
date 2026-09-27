@@ -58,6 +58,14 @@ class ComposeTest(unittest.TestCase):
         self.assertTrue(said.startswith("Listo, señor."))
         self.assertTrue(said.endswith("El detalle está en pantalla, señor."))
 
+    def test_summary_gets_its_own_limit(self):
+        summary = "Revisé todo, señor. " + "Encontré algo importante. " * 20
+        cfg = {**self.cfg, "summary_max_chars": 300}
+        said = compose_reply(summary + "\n\n- detalle\n" + "x " * 200, cfg)
+        spoken = said.removesuffix(" El detalle está en pantalla, señor.")
+        self.assertGreater(len(spoken), self.cfg["max_chars"])
+        self.assertLessEqual(len(spoken), 300)
+
     def test_short_reply_spoken_in_full(self):
         self.assertEqual(compose_reply("Hecho, **señor**.", self.cfg), "Hecho, señor.")
 

@@ -24,10 +24,12 @@ DEFAULTS = {
         "use_speaker_boost": True,
         "speed": 0.97,
     },
-    # auto: short replies in full, long ones only their opening paragraph.
-    # lead: always the opening paragraph. full: everything (up to max_chars).
+    # auto: short replies in full, long ones only their spoken summary
+    # (the opening paragraph). lead: always the summary. full: everything.
     "mode": "auto",
     "max_chars": 450,
+    # The spoken summary covers the whole reply, so it gets more room.
+    "summary_max_chars": 650,
     "greet_on_start": True,
     "speak_notifications": True,
     "interrupt_on_prompt": True,
