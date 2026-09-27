@@ -6,7 +6,7 @@ from pathlib import Path
 
 from voice import persona, speakable, transcript
 from voice.config import DEFAULTS
-from voice.hooks import compose_reply, handle, is_repeat
+from voice.hooks import compose_reply, handle, is_repeat, work
 
 ROCK = (Path(__file__).parent / "rockavionics_reply.md").read_text(encoding="utf-8")
 # Opens with plain prose, but that prose misses the question it ends with.
@@ -134,6 +134,32 @@ class RepeatTest(unittest.TestCase):
             self.assertIsNone(handle("prompt", {"prompt": "arregla el bug"}, DEFAULTS))
         player.stop.assert_called_once()
         player.spawn.assert_not_called()
+
+
+class TurnTakingTest(unittest.TestCase):
+    def run_work(self, payload, busy):
+        f = tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8")
+        json.dump(payload, f)
+        f.close()
+        with mock.patch("voice.hooks.player") as player:
+            player.busy.return_value = busy
+            player.wait_turn.return_value = True
+            work("say", f.name, DEFAULTS)
+        return player
+
+    def test_idle_reminder_dropped_while_speaking(self):
+        player = self.run_work({"text": "Sigo aquí.", "polite": True, "skip_if_busy": True}, busy=True)
+        player.speak.assert_not_called()
+        player.claim.assert_not_called()
+
+    def test_permission_waits_its_turn(self):
+        player = self.run_work({"text": "Necesito permiso.", "polite": True}, busy=True)
+        player.wait_turn.assert_called_once()
+        player.speak.assert_called_once()
+
+    def test_idle_reminder_spoken_when_quiet(self):
+        player = self.run_work({"text": "Sigo aquí.", "polite": True, "skip_if_busy": True}, busy=False)
+        player.speak.assert_called_once()
 
 
 class TranscriptTest(unittest.TestCase):

@@ -44,6 +44,12 @@ def notification(payload, h):
     return f"{h.capitalize()}, requiero su atención un momento."
 
 
+def is_idle(payload):
+    """The "still waiting for you" reminder: pointless while Rachel is talking."""
+    message = (payload.get("message") or "").lower()
+    return payload.get("notification_type") == "idle_prompt" or "waiting for your input" in message
+
+
 def needs_answer(h):
     return f"{h.capitalize()}, necesito que me responda algo. Está en pantalla."
 

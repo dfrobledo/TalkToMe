@@ -105,11 +105,13 @@ def handle(event, payload, cfg):
     if cfg.get("muted") or not cfg.get("api_key"):
         return
     if event == "session" and cfg.get("greet_on_start") and payload.get("source", "startup") == "startup":
-        _enqueue("say", {"text": persona.greeting(cfg["honorific"])})
+        _enqueue("say", {"text": persona.greeting(cfg["honorific"]), "polite": True})
     elif event == "notification" and cfg.get("speak_notifications"):
         line = persona.notification(payload, cfg["honorific"])
         if line:
-            _enqueue("say", {"text": line})
+            # Notifications never cut a reply short: they wait their turn,
+            # and the idle reminder is dropped if Rachel is already talking.
+            _enqueue("say", {"text": line, "polite": True, "skip_if_busy": persona.is_idle(payload)})
     elif event == "stop":
         _enqueue("reply", payload)
 
@@ -124,6 +126,9 @@ def work(kind, payload_file, cfg):
             os.remove(payload_file)
         except OSError:
             pass
+    if payload.get("polite") and player.busy():
+        if payload.get("skip_if_busy") or not player.wait_turn(timeout=180):
+            return
     # Claim first: if the user types while a summary is being written, the
     # prompt hook interrupts this worker before it says something stale.
     player.claim()

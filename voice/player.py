@@ -4,6 +4,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import time
 
 from . import tts
 from .config import ROOT, STATE_DIR
@@ -184,6 +185,47 @@ def stop():
         PID_FILE.unlink()
     except OSError:
         pass
+    return True
+
+
+def _alive(pid):
+    if sys.platform == "win32":
+        # os.kill(pid, 0) would send CTRL_C_EVENT on Windows; ask the kernel.
+        import ctypes
+
+        kernel = ctypes.windll.kernel32
+        handle = kernel.OpenProcess(0x1000, False, pid)  # QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        kernel.GetExitCodeProcess(handle, ctypes.byref(code))
+        kernel.CloseHandle(handle)
+        return code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def busy():
+    """Is another process speaking (or preparing to speak) right now?"""
+    try:
+        pid = int(PID_FILE.read_text())
+    except (OSError, ValueError):
+        return False
+    return pid != os.getpid() and _alive(pid)
+
+
+def wait_turn(timeout):
+    """Wait until nobody is speaking. False if it took longer than `timeout`."""
+    deadline = time.monotonic() + timeout
+    while busy():
+        if time.monotonic() > deadline:
+            return False
+        time.sleep(0.5)
     return True
 
 
