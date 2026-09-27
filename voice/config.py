@@ -60,6 +60,8 @@ def _load_dotenv():
 
 
 def load():
+    # A key already in the environment wins over .env: remember which one we use.
+    from_env = bool(os.environ.get("ELEVENLABS_API_KEY"))
     _load_dotenv()
     cfg = json.loads(json.dumps(DEFAULTS))
     path = config_path()
@@ -72,6 +74,7 @@ def load():
         if os.environ.get(env):
             cfg[key] = os.environ[env]
     cfg["api_key"] = os.environ.get("ELEVENLABS_API_KEY", "")
+    cfg["api_key_source"] = "variable de entorno" if from_env else ".env"
     cfg["muted"] = (STATE_DIR / "muted").exists()
     return cfg
 

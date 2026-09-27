@@ -115,8 +115,16 @@ def cmd_quota(args, cfg):
 def cmd_doctor(args, cfg):
     ok = True
     print(f"Config:     voz {cfg['voice_id']} · modelo {cfg['model_id']} · modo {cfg['mode']}")
-    print(f"API key:    {'OK' if cfg['api_key'] else 'FALTA (crea .env con ELEVENLABS_API_KEY)'}")
-    ok &= bool(cfg["api_key"])
+    key = cfg["api_key"]
+    if not key:
+        print("API key:    FALTA (crea .env con ELEVENLABS_API_KEY)")
+    elif key.startswith("pon_tu_clave"):
+        print("API key:    .env sigue con el texto de ejemplo: pega tu clave real")
+        key = ""
+    else:
+        # Enough to compare with the dashboard without revealing the key.
+        print(f"API key:    {key[:6]}…{key[-4:]} ({len(key)} caracteres, desde {cfg['api_key_source']})")
+    ok &= bool(key)
     audio = player.describe(cfg)
     print(f"Audio:      {audio or 'FALTA reproductor (instala mpv)'}")
     ok &= bool(audio)
@@ -126,6 +134,10 @@ def cmd_doctor(args, cfg):
             cmd_quota(args, cfg)
         except tts.TTSError as e:
             print(f"ElevenLabs: {e}")
+            if "401" in str(e) and cfg["api_key_source"] != ".env":
+                print("            La clave viene de una variable de entorno de Windows, no de .env.")
+                print("            Bórrala: [Environment]::SetEnvironmentVariable('ELEVENLABS_API_KEY', $null, 'User')")
+                print("            y abre una PowerShell nueva.")
             ok = False
     return 0 if ok else 1
 
