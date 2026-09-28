@@ -6,7 +6,7 @@ from pathlib import Path
 
 from voice import persona, speakable, transcript
 from voice.config import DEFAULTS
-from voice.hooks import compose_reply, handle, is_repeat, work
+from voice.hooks import compose_reply, detail, handle, is_detail, is_repeat, work
 
 ROCK = (Path(__file__).parent / "rockavionics_reply.md").read_text(encoding="utf-8")
 # Opens with plain prose, but that prose misses the question it ends with.
@@ -134,6 +134,46 @@ class RepeatTest(unittest.TestCase):
             self.assertIsNone(handle("prompt", {"prompt": "arregla el bug"}, DEFAULTS))
         player.stop.assert_called_once()
         player.spawn.assert_not_called()
+
+
+class DetailTest(unittest.TestCase):
+    def test_detail_phrases(self):
+        for prompt in ("detalle", "Rachel, léeme el detalle", "dame el detalle por favor", "Léelo todo."):
+            self.assertTrue(is_detail(prompt), prompt)
+        for prompt in ("detalle del error en el log", "lee todo el archivo", "repite"):
+            self.assertFalse(is_detail(prompt), prompt)
+
+    def test_detail_blocks_prompt(self):
+        with mock.patch("voice.hooks.player") as player:
+            decision = handle("prompt", {"prompt": "detalle"}, DEFAULTS)
+        self.assertEqual(decision["decision"], "block")
+        player.spawn.assert_called_once_with("_detail")
+
+    def run_detail(self, reply, narration):
+        md = Path(tempfile.mkdtemp()) / "last-reply.md"
+        if reply:
+            md.write_text(reply, encoding="utf-8")
+        with mock.patch("voice.hooks.LAST_REPLY_MD", md), mock.patch("voice.hooks.player") as player, \
+                mock.patch("voice.hooks.summarizer.narrate", return_value=narration) as narrate, \
+                mock.patch("voice.hooks.log"):
+            player.last_spoken.return_value = "Señor, ¿ya tiene el Pi 3?"
+            detail(DEFAULTS)
+        return player, narrate
+
+    def test_narrates_rest_of_reply(self):
+        player, narrate = self.run_detail(ROCK2, "Además, la norma colombiana sigue sin confirmar.")
+        narrate.assert_called_once_with(ROCK2, "Señor, ¿ya tiene el Pi 3?", DEFAULTS)
+        said = [c.args[0] for c in player.speak.call_args_list]
+        self.assertEqual(said, ["Con gusto, señor. Deme unos segundos.", "Además, la norma colombiana sigue sin confirmar."])
+
+    def test_falls_back_to_clean_reply(self):
+        player, _ = self.run_detail(ROCK2, "")
+        self.assertIn("LoRa sigue en brainstorm", player.speak.call_args_list[-1].args[0])
+
+    def test_nothing_to_detail(self):
+        player, narrate = self.run_detail("", "x")
+        narrate.assert_not_called()
+        self.assertIn("Todavía no tengo", player.speak.call_args.args[0])
 
 
 class TurnTakingTest(unittest.TestCase):

@@ -23,6 +23,7 @@ Proyecto RocketYeah: que Claude Code **hable** con la naturalidad de las convers
 | `Notification` | "Señor, necesito su permiso para usar Bash. Prometo no incendiar nada." |
 | `UserPromptSubmit` | Se calla al instante: usted tiene la palabra |
 | Escribes **"repite"** | Repite su última respuesta, sin gastar créditos ni turno de Claude |
+| Escribes **"detalle"** | Le narra el resto de la última respuesta, más allá del resumen |
 
 ## El truco para que suene humano
 
@@ -62,6 +63,7 @@ Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener e
 | Comando | Para qué |
 |---|---|
 | `python talktome.py repite` | Repite la última respuesta desde la terminal |
+| `python talktome.py detalle` | Narra el detalle de la última respuesta desde la terminal |
 | `python talktome.py say "texto"` | Decir algo (sin texto: frase de prueba) |
 | `python talktome.py design` | Crear su voz con Voice Design (ver abajo) |
 | `python talktome.py voices` | Listar tus voces con su ID |
@@ -78,6 +80,14 @@ Escribe **repite** en Claude Code y pulsa Enter. También sirven "repítelo", "o
 
 Ese mensaje nunca llega a Claude: un hook lo intercepta, así que no consume tu plan ni aparece en la conversación. Rachel reproduce el audio guardado de su última respuesta, sin gastar créditos de ElevenLabs; solo si la habías interrumpido a mitad de frase la vuelve a generar completa.
 
+## Que te lea el detalle
+
+Por defecto Rachel solo dice el resumen: leer en voz alta cada respuesta completa, con sus pines, rutas y tablas, cansa. Cuando quieras el resto, escribe **detalle** (también "léeme el detalle", "dame el detalle", "léelo todo"), como mensaje completo.
+
+Rachel dice "Deme unos segundos" y le pide a Claude (la misma red de seguridad, con tu plan) que convierta la respuesta en una lectura para el oído: completa, sin repetir el resumen que ya oíste, con las tablas dichas como frases, el código descrito en vez de leído y terminando en lo que te pide. Suele tardar de 10 a 20 segundos. Si Claude no responde, lee la respuesta tal cual, limpia de símbolos.
+
+Un detalle largo puede ocupar unos 2.500 caracteres de ElevenLabs (unos tres minutos de voz); el tope es `detail_max_chars`. Escribir cualquier cosa la interrumpe, como siempre.
+
 ## Configuración (`talktome.config.json`)
 
 | Clave | Valor por defecto | Notas |
@@ -89,6 +99,7 @@ Ese mensaje nunca llega a Claude: un hook lo intercepta, así que no consume tu 
 | `mode` | `auto` | `auto`, `lead` (solo el resumen hablado) o `full` |
 | `max_chars` | 450 | En `auto`, respuestas hasta este largo se leen completas |
 | `summary_max_chars` | 650 | Tope del resumen hablado: protege tus créditos |
+| `detail_max_chars` | 2500 | Tope de la lectura del detalle |
 | `summarizer` | `"claude"` | Red de seguridad para respuestas sin resumen; `"off"` la apaga |
 | `greet_on_start`, `speak_notifications`, `interrupt_on_prompt` | `true` | |
 | `player` | `auto` | `mpv`, `ffplay` o `auto` |

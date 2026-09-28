@@ -77,13 +77,31 @@ REPEAT_WORDS = {
 }
 
 
-def is_repeat(prompt):
-    """Is the whole prompt just asking Rachel to say her last reply again?"""
+DETAIL_WORDS = {
+    "detalle", "el detalle", "detalles", "los detalles", "mas detalle", "con detalle",
+    "dame el detalle", "dime el detalle", "leeme el detalle", "lee el detalle", "cuentame el detalle",
+    "leelo todo", "lee todo", "leemelo todo", "dimelo todo", "todo", "completo", "la respuesta completa",
+}
+LAST_REPLY_MD = STATE_DIR / "last-reply.md"
+
+
+def _command(prompt):
+    """The prompt reduced to bare words: no accents, punctuation, name or courtesy."""
     text = unicodedata.normalize("NFKD", (prompt or "").lower())
     text = "".join(c for c in text if not unicodedata.combining(c))
     text = re.sub(r"[^\w\s]", " ", text)
     text = re.sub(r"\b(rachel|por favor|porfa|porfavor)\b", " ", text)
-    return " ".join(text.split()) in REPEAT_WORDS
+    return " ".join(text.split())
+
+
+def is_repeat(prompt):
+    """Is the whole prompt just asking Rachel to say her last reply again?"""
+    return _command(prompt) in REPEAT_WORDS
+
+
+def is_detail(prompt):
+    """Is the whole prompt just asking Rachel for the rest of her last reply?"""
+    return _command(prompt) in DETAIL_WORDS
 
 
 def handle(event, payload, cfg):
@@ -96,7 +114,12 @@ def handle(event, payload, cfg):
     if os.environ.get("TALKTOME_DISABLE"):
         return None
     if event == "prompt":
-        if is_repeat(payload.get("prompt") or payload.get("prompt_text")):
+        prompt = payload.get("prompt") or payload.get("prompt_text")
+        if is_detail(prompt):
+            player.stop()
+            player.spawn("_detail")
+            return {"decision": "block", "reason": "Rachel le lee el detalle de su última respuesta."}
+        if is_repeat(prompt):
             player.stop()
             player.spawn("_repeat")
             # Blocked prompts never reach Claude: no turn, no tokens.
@@ -138,6 +161,9 @@ def work(kind, payload_file, cfg):
     if kind == "reply" and not reply.strip():
         log("respuesta vacía: nada que decir")  # and nothing to interrupt for
         return
+    if kind == "reply":
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        LAST_REPLY_MD.write_text(reply, encoding="utf-8")  # for "detalle"
     # Claim before summarizing: if the user types while a summary is being
     # written, the prompt hook interrupts this worker before it says
     # something stale.
@@ -151,6 +177,33 @@ def work(kind, payload_file, cfg):
         if not text:
             return
         player.speak(text, cfg, keep=kind == "reply")
+    finally:
+        player.release()
+
+
+def detail(cfg):
+    """Narrate the rest of the last reply, beyond the summary already heard."""
+    h = cfg["honorific"]
+    try:
+        reply = LAST_REPLY_MD.read_text(encoding="utf-8")
+    except OSError:
+        reply = ""
+    player.claim()
+    try:
+        if not reply.strip():
+            player.speak(persona.nothing_to_detail(h), cfg)
+            return
+        # Narrating takes a few seconds; say so instead of going quiet.
+        player.speak(persona.one_moment(h), cfg)
+        started = time.monotonic()
+        text = speakable.to_speech(summarizer.narrate(reply, player.last_spoken(), cfg)).replace("\n\n", " ")
+        if text:
+            log(f"detalle narrado en {time.monotonic() - started:.1f} s → {len(text)} car.")
+        else:
+            text = speakable.to_speech(reply).replace("\n\n", " ")
+            log("detalle: el narrador falló, leo la respuesta limpia")
+        text, _ = speakable.truncate(text, cfg.get("detail_max_chars", 2500))
+        player.speak(text, cfg)
     finally:
         player.release()
 

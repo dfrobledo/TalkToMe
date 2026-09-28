@@ -95,6 +95,11 @@ def _keep_reply(text, data, ext):
     LAST_REPLY.with_suffix(".audio.txt").write_text(text, encoding="utf-8")
 
 
+def last_spoken():
+    """Text of the last reply Rachel said out loud."""
+    return _read(LAST_REPLY.with_suffix(".txt"))
+
+
 def replay(cfg):
     """Say the last reply again. Returns False if there is none.
 

@@ -84,6 +84,17 @@ def cmd_repeat(args, cfg):
     return 0
 
 
+def cmd_detail(args, cfg):
+    try:
+        hooks.detail(cfg)
+    except Exception:
+        if args.command == "_detail":
+            _log_error()  # Detached: nobody is watching the console.
+        else:
+            raise
+    return 0
+
+
 def cmd_say(args, cfg):
     text = " ".join(args.text) or SAMPLE.format(h=cfg["honorific"])
     player.claim()
@@ -195,6 +206,8 @@ def main(argv=None):
     p.set_defaults(fn=cmd_worker)
     sub.add_parser("repite", aliases=["repeat"], help="repite la última respuesta").set_defaults(fn=cmd_repeat)
     sub.add_parser("_repeat").set_defaults(fn=cmd_repeat)
+    sub.add_parser("detalle", aliases=["detail"], help="narra el detalle de la última respuesta").set_defaults(fn=cmd_detail)
+    sub.add_parser("_detail").set_defaults(fn=cmd_detail)
     p = sub.add_parser("say", help="dice un texto (o una frase de prueba)")
     p.add_argument("text", nargs="*")
     p.set_defaults(fn=cmd_say)

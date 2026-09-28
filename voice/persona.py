@@ -50,6 +50,14 @@ def is_idle(payload):
     return payload.get("notification_type") == "idle_prompt" or "waiting for your input" in message
 
 
+def one_moment(h):
+    return f"Con gusto, {h}. Deme unos segundos."
+
+
+def nothing_to_detail(h):
+    return f"Todavía no tengo ninguna respuesta que detallarle, {h}."
+
+
 def needs_answer(h):
     return f"{h.capitalize()}, necesito que me responda algo. Está en pantalla."
 
