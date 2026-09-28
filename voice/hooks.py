@@ -91,6 +91,10 @@ def handle(event, payload, cfg):
 
     Returns a hook decision for Claude Code, if any, to print as JSON.
     """
+    # Set inside the summarizer's own Claude session: its prompt must not
+    # silence the worker that is waiting for that very summary.
+    if os.environ.get("TALKTOME_DISABLE"):
+        return None
     if event == "prompt":
         if is_repeat(payload.get("prompt") or payload.get("prompt_text")):
             player.stop()
@@ -100,7 +104,7 @@ def handle(event, payload, cfg):
         if cfg.get("interrupt_on_prompt", True):
             player.stop()
         return None
-    if os.environ.get("TALKTOME_DISABLE") or not cfg.get("enabled", True):
+    if not cfg.get("enabled", True):
         return
     if cfg.get("muted") or not cfg.get("api_key"):
         return
@@ -128,17 +132,44 @@ def work(kind, payload_file, cfg):
             pass
     if payload.get("polite") and player.busy():
         if payload.get("skip_if_busy") or not player.wait_turn(timeout=180):
+            log("aviso omitido: Rachel estaba hablando")
             return
-    # Claim first: if the user types while a summary is being written, the
-    # prompt hook interrupts this worker before it says something stale.
+    reply = _reply_from(payload) if kind == "reply" else ""
+    if kind == "reply" and not reply.strip():
+        log("respuesta vacía: nada que decir")  # and nothing to interrupt for
+        return
+    # Claim before summarizing: if the user types while a summary is being
+    # written, the prompt hook interrupts this worker before it says
+    # something stale.
     player.claim()
     try:
         if kind == "say":
             text = payload["text"]
         else:
-            text = compose_reply(_reply_from(payload), cfg, summarize=summarizer.summarize)
+            text = compose_reply(reply, cfg, summarize=_logged(summarizer.summarize))
+            log(f"respuesta: {len(reply)} car. en pantalla → {len(text)} car. hablados")
         if not text:
             return
         player.speak(text, cfg, keep=kind == "reply")
     finally:
         player.release()
+
+
+def _logged(summarize):
+    def run(reply, cfg):
+        started = time.monotonic()
+        text = summarize(reply, cfg)
+        log(f"sin resumen propio → resumidor {'OK' if text else 'FALLÓ'} en {time.monotonic() - started:.1f} s")
+        return text
+
+    return run
+
+
+def log(message):
+    """One line per decision in ~/.talktome/talktome.log, to explain silences."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = STATE_DIR / "talktome.log"
+    if path.exists() and path.stat().st_size > 512_000:
+        path.replace(path.with_suffix(".log.old"))
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")

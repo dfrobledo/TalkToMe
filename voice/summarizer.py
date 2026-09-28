@@ -14,8 +14,11 @@ from .player import NO_WINDOW
 SYSTEM = "Redactas resúmenes hablados en español latinoamericano. Sigue exactamente las instrucciones del mensaje."
 # Newer flags keep the run lean and out of the user's history; older CLIs
 # that reject them are retried without.
+# No hooks at all in the summarizer's session: neither ours (TALKTOME_DISABLE
+# also guards those) nor any other the user has, which only add delay.
 LEAN_FLAGS = ["--effort", "low", "--tools", "", "--no-session-persistence",
-              "--disable-slash-commands", "--system-prompt", SYSTEM]
+              "--disable-slash-commands", "--settings", '{"disableAllHooks": true}',
+              "--system-prompt", SYSTEM]
 
 INSTRUCTIONS = """Eres Rachel, la asistente de voz del usuario, a quien llamas "{h}". Abajo está la última respuesta que su asistente de programación le dejó en pantalla. Escribe el resumen hablado que Rachel le dirá en voz alta, para que quede enterado de lo importante sin mirar la pantalla.
 

@@ -124,7 +124,7 @@ La red de seguridad (resumen generado cuando una respuesta no trae el suyo) usa 
 | Rachel solo lee el primer párrafo y no tiene su tono | El proyecto usa otro estilo de salida (por ejemplo "Concise"), que gana sobre el de usuario. En ese proyecto: `/config` → Output style → Rachel. Si vuelve a cambiar, edita `outputStyle` en su `.claude/settings.json`. Mientras tanto, la red de seguridad genera el resumen (con unos segundos de espera). |
 | Acento de España | Voz generada antes del cambio a español latino: `python talktome.py design` (opción `--acento`). |
 | `Invalid API key` (401) | `python talktome.py doctor` muestra el principio y el final de la clave y de dónde sale (`.env` o una variable de entorno de Windows que tiene prioridad). |
-| No suena nada | `type $HOME\.talktome\talktome.log` muestra el error. |
+| A veces no lee la respuesta | `type $HOME\.talktome\talktome.log`: cada respuesta deja una línea (si trajo resumen propio, si hubo que generarlo y cuánto tardó, o si llegó vacía), además de cualquier error. |
 
 ## Hoja de ruta
 
