@@ -183,6 +183,11 @@ La red de seguridad (resumen generado cuando una respuesta no trae el suyo) usa 
 
 ## Desarrollo
 
+Documentación técnica, con diagramas:
+
+- [`docs/ARQUITECTURA.md`](docs/ARQUITECTURA.md): cómo funciona por dentro. Flujo de hooks y workers, qué decir en cada respuesta, sesiones y turnos entre terminales, mazos de frases, audio y estado en disco.
+- [`docs/REFERENCIA.md`](docs/REFERENCIA.md): comandos, configuración, contrato con Claude Code, API de cada módulo y archivos de estado.
+
 ```bash
 python -m unittest -v      # pruebas (sin red ni audio)
 ```
