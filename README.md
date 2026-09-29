@@ -21,7 +21,7 @@ Proyecto RocketYeah: que Claude Code **hable** con la naturalidad de las convers
 | `SessionStart` | "Buenas noches, señor. ¿Viene a hacerme otra prueba Voight-Kampff?" |
 | `Stop` | Lee la respuesta (o su resumen hablado) |
 | `Notification` | "Señor, necesito su permiso para usar Bash. Prometo no incendiar nada." |
-| `UserPromptSubmit` | Se calla al instante: usted tiene la palabra |
+| `UserPromptSubmit` | Se calla al instante: usted tiene la palabra (solo en esa terminal) |
 | Escribes **"repite"** | Repite su última respuesta, sin gastar créditos ni turno de Claude |
 | Escribes **"detalle"** | Le narra el resto de la última respuesta, más allá del resumen |
 
@@ -62,7 +62,7 @@ Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener e
 
 | Comando | Para qué |
 |---|---|
-| `python talktome.py repite` | Repite la última respuesta desde la terminal |
+| `python talktome.py repite` | Repite la última respuesta (de cualquier proyecto) desde la terminal |
 | `python talktome.py detalle` | Narra el detalle de la última respuesta desde la terminal |
 | `python talktome.py say "texto"` | Decir algo (sin texto: frase de prueba) |
 | `python talktome.py design` | Crear su voz con Voice Design (ver abajo) |
@@ -88,6 +88,27 @@ Por defecto Rachel solo dice el resumen: leer en voz alta cada respuesta complet
 Rachel dice "Deme unos segundos" y le pide a Claude (la misma red de seguridad, con tu plan) que convierta la respuesta en una lectura para el oído: completa, sin repetir el resumen que ya oíste, con las tablas dichas como frases, el código descrito en vez de leído y terminando en lo que te pide. Suele tardar de 10 a 20 segundos. Si Claude no responde, lee la respuesta tal cual, limpia de símbolos.
 
 Un detalle largo puede ocupar unos 2.500 caracteres de ElevenLabs (unos tres minutos de voz); el tope es `detail_max_chars`. Escribir cualquier cosa la interrumpe, como siempre.
+
+## Varias terminales, varios proyectos
+
+Cada terminal es una sesión de Claude Code, y Rachel las trata por separado:
+
+- **Cada una con su memoria.** "Repite" y "detalle" usan la última respuesta de *esa* terminal, nunca la del otro proyecto.
+- **Escribir solo calla a la suya.** Si RocketYeah está hablando y usted escribe en RockAvionics, RocketYeah termina su frase.
+- **Una sola voz, por turnos.** Si dos proyectos terminan a la vez, el segundo espera a que el primero acabe en lugar de cortarlo (hasta 5 minutos para respuestas y 3 para avisos). El recordatorio de espera no hace fila: si alguien está hablando, se omite. Dentro de una misma terminal, una respuesta nueva sí interrumpe a la anterior, como siempre.
+- **Distintivo de proyecto.** Cuando la voz salta de un proyecto a otro, Rachel dice primero desde dónde habla, con un mazo de frases de cine negro: "En Rock Avionics, señor:", "Transmisión desde Rocket Yeah.", "Ampliar sector Rock Avionics. Detener.", "Otra ventana encendida en la ciudad: Talk To Me." Si sigue en el mismo proyecto no lo repite, y los permisos también lo llevan ("Desde Rock Avionics, señor. Necesito su permiso para usar Bash…"). Al abrir sesión, el saludo lo incluye: "Buenas noches, señor. Expediente Rock Avionics abierto."
+
+El nombre sale de la carpeta del repositorio (aunque abra Claude en una subcarpeta), separado para que se pronuncie bien: `RockAvionics` se dice "Rock Avionics". En la config puede darle a cada proyecto un nombre propio, o incluso otra voz, otro trato o su propio ajuste de voz, para reconocerlo sin que diga nada:
+
+```json
+"announce_project": "switch",
+"projects": {
+  "RockAvionics": "la aviónica del cohete",
+  "RocketYeah": {"name": "la Torre Tyrell", "voice_id": "<otra voz>", "voice_settings": {"speed": 1.02}}
+}
+```
+
+`announce_project`: `"switch"` (por defecto, solo al cambiar de proyecto), `"always"` (antes de cada respuesta) u `"off"`. Los distintivos son cortos y quedan en caché: después de la primera vez no gastan créditos.
 
 ## Frases de Rachel: nunca la misma dos veces
 
@@ -116,6 +137,8 @@ Todas caben en la caché: cada frase gasta caracteres de ElevenLabs solo la prim
 | `summarizer` | `"claude"` | Red de seguridad para respuestas sin resumen; `"off"` la apaga (y también las frases inventadas) |
 | `invent_chance` | 0.2 | Probabilidad de que Claude invente frases nuevas tras un recordatorio; 0 lo apaga |
 | `invented_max` | 60 | Cuántas frases inventadas se conservan |
+| `announce_project` | `"switch"` | Decir desde qué proyecto habla: `switch`, `always` u `off` |
+| `projects` | `{}` | Nombre hablado de cada proyecto (carpeta → nombre) u overrides por proyecto |
 | `greet_on_start`, `speak_notifications`, `interrupt_on_prompt` | `true` | |
 | `player` | `auto` | `mpv`, `ffplay` o `auto` |
 
@@ -164,4 +187,4 @@ La red de seguridad (resumen generado cuando una respuesta no trae el suyo) usa 
 python -m unittest -v      # pruebas (sin red ni audio)
 ```
 
-Estructura: `voice/speakable.py` (markdown → habla, detección del resumen y de preguntas pendientes), `transcript.py` (respuesta final), `summarizer.py` (red de seguridad con `claude -p`), `tts.py` (ElevenLabs y Voice Design), `player.py` (audio, segundo plano, turnos, interrupción, repetir), `hooks.py` (eventos de Claude Code), `persona.py` (qué frase dice Rachel), `lines.py` (banco de frases), `deck.py` (mazos barajados, escalada y frases inventadas), `cli.py` (comandos). `tests/` incluye respuestas reales de RockAvionics como casos de prueba. Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.
+Estructura: `voice/speakable.py` (markdown → habla, detección del resumen y de preguntas pendientes), `transcript.py` (respuesta final), `summarizer.py` (red de seguridad con `claude -p`), `tts.py` (ElevenLabs y Voice Design), `player.py` (audio, segundo plano, turnos entre sesiones, interrupción, repetir), `projects.py` (de qué proyecto habla cada sesión), `hooks.py` (eventos de Claude Code), `persona.py` (qué frase dice Rachel), `lines.py` (banco de frases), `deck.py` (mazos barajados, escalada y frases inventadas), `cli.py` (comandos). `tests/` incluye respuestas reales de RockAvionics como casos de prueba. Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.

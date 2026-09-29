@@ -39,6 +39,12 @@ DEFAULTS = {
     # (0 turns it off), and how many invented lines to keep.
     "invent_chance": 0.2,
     "invented_max": 60,
+    # With several terminals open, say which project Rachel speaks from:
+    # "switch" when her voice jumps to another project, "always", or "off".
+    "announce_project": "switch",
+    # Folder name → spoken name, or {"name": ..., "voice_id": ..., ...}
+    # for a project with its own name, voice or honorific.
+    "projects": {},
     "greet_on_start": True,
     "speak_notifications": True,
     "interrupt_on_prompt": True,

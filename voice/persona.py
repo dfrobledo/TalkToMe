@@ -45,14 +45,21 @@ def _special(h, now):
     return ""
 
 
-def greeting(h, now=None):
+def greeting(h, now=None, project=""):
+    """Hello on opening a session, naming its project when there is one."""
     now = now or datetime.now()
     hour = now.hour
     salute = "Buenos días" if 5 <= hour < 12 else "Buenas tardes" if 12 <= hour < 20 else "Buenas noches"
+    opening = _fill(_draw("opening", lines.SESSION_OPENINGS, now), h, p=project) + " " if project else ""
     special = _special(h, now)
     if special:
-        return f"{salute}. {special}"
-    return f"{salute}, {h}. {_fill(_draw('greeting', lines.GREETINGS, now), h)}"
+        return f"{salute}, {h}. {opening}{special}" if opening else f"{salute}. {special}"
+    return f"{salute}, {h}. {opening}{_fill(_draw('greeting', lines.GREETINGS, now), h)}"
+
+
+def callsign(project, h, now=None):
+    """Where Rachel speaks from, said when her voice changes project."""
+    return _fill(_draw("callsign", lines.CALLSIGNS, now or datetime.now()), h, p=project)
 
 
 def idle(h, now=None):

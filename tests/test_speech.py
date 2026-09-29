@@ -127,7 +127,7 @@ class RepeatTest(unittest.TestCase):
         with mock.patch("voice.hooks.player") as player:
             decision = handle("prompt", {"prompt": "repite"}, DEFAULTS)
         self.assertEqual(decision["decision"], "block")
-        player.spawn.assert_called_once_with("_repeat")
+        player.spawn.assert_called_once_with("_repeat", "", "")
 
     def test_normal_prompt_only_interrupts(self):
         with mock.patch("voice.hooks.player") as player:
@@ -147,17 +147,16 @@ class DetailTest(unittest.TestCase):
         with mock.patch("voice.hooks.player") as player:
             decision = handle("prompt", {"prompt": "detalle"}, DEFAULTS)
         self.assertEqual(decision["decision"], "block")
-        player.spawn.assert_called_once_with("_detail")
+        player.spawn.assert_called_once_with("_detail", "", "")
 
     def run_detail(self, reply, narration):
-        md = Path(tempfile.mkdtemp()) / "last-reply.md"
-        if reply:
-            md.write_text(reply, encoding="utf-8")
-        with mock.patch("voice.hooks.LAST_REPLY_MD", md), mock.patch("voice.hooks.player") as player, \
+        with mock.patch("voice.hooks.player") as player, \
                 mock.patch("voice.hooks.summarizer.narrate", return_value=narration) as narrate, \
                 mock.patch("voice.hooks.log"):
+            player.last_markdown.return_value = reply
             player.last_spoken.return_value = "Señor, ¿ya tiene el Pi 3?"
-            detail(DEFAULTS)
+            detail(DEFAULTS, "sesion-a")
+        player.last_markdown.assert_called_once_with("sesion-a")
         return player, narrate
 
     def test_narrates_rest_of_reply(self):
