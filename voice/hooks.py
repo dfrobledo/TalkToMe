@@ -153,6 +153,9 @@ def handle(event, payload, cfg):
     # Each terminal is its own session: typing in one only silences what
     # that one was saying, and "repite" repeats its own last reply.
     session = payload.get("session_id") or ""
+    track(event, session)
+    if event == "end":
+        return None
     if event == "prompt":
         prompt = payload.get("prompt") or payload.get("prompt_text")
         if is_detail(prompt):
@@ -169,6 +172,10 @@ def handle(event, payload, cfg):
             return {"decision": "block", "reason": "Rachel repite su última respuesta."}
         if cfg.get("interrupt_on_prompt", True):
             player.stop(session)
+        if LISTEN_DOZED.exists():
+            # It left after hours without activity, the terminal stayed open.
+            LISTEN_DOZED.unlink(missing_ok=True)
+            start_listening()
         folder = player.session_dir(session)
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "prompt-at").write_text(str(time.time()), encoding="utf-8")
@@ -184,6 +191,8 @@ def handle(event, payload, cfg):
         payload = {**payload, "stop_at": time.time()}
     if not cfg.get("enabled", True):
         return
+    if event == "session" and cfg.get("listen_on_start", True) and cfg.get("api_key"):
+        start_listening()
     if cfg.get("muted") or not cfg.get("api_key"):
         return
     where = {"session_id": session, "cwd": payload.get("cwd") or ""}
@@ -204,6 +213,54 @@ def handle(event, payload, cfg):
             _enqueue("say", {"text": line, "polite": True, "skip_if_busy": idle, "invent": invent, **where})
     elif event == "stop":
         _enqueue("reply", payload)
+
+
+# Claude Code sessions that are open: SessionStart adds, SessionEnd removes.
+# The background listener leaves when none is left.
+OPEN_SESSIONS = STATE_DIR / "open-sessions"
+ACTIVITY = STATE_DIR / "claude-activity"
+# Left by a background listener that quit for lack of activity: the next
+# prompt brings it back.
+LISTEN_DOZED = STATE_DIR / "listen-dozed"
+
+
+def track(event, session):
+    """Note that Claude Code is in use, and which sessions are open."""
+    OPEN_SESSIONS.mkdir(parents=True, exist_ok=True)
+    ACTIVITY.write_text(str(time.time()), encoding="utf-8")
+    if not session:
+        return
+    marker = OPEN_SESSIONS / re.sub(r"[^\w-]", "", session)[:80]
+    if event == "end":
+        marker.unlink(missing_ok=True)
+    elif event == "session" or marker.exists():
+        marker.touch()
+
+
+def claude_open(idle_minutes=120, grace=60, now=None):
+    """Is Claude Code still in use? False once every session ended (after `grace`
+    seconds, in case one reopens) or nothing happened for `idle_minutes`."""
+    now = now or time.time()
+    try:
+        last = ACTIVITY.stat().st_mtime
+    except OSError:
+        return False
+    if now - last > idle_minutes * 60:
+        return False  # terminals closed without saying goodbye
+    try:
+        if any(OPEN_SESSIONS.iterdir()):
+            return True
+    except OSError:
+        pass
+    return now - last < grace
+
+
+def start_listening():
+    """Launch `escucha` in the background if it is not running (Windows only)."""
+    from . import listen, mic
+
+    if mic.available() and not listen.running():
+        player.spawn("escucha", "--fondo")
 
 
 def announces(cfg):

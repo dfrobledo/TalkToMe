@@ -196,9 +196,10 @@ def cmd_doctor(args, cfg):
             state = f"FALLA el {e}"
             ok = False
         active = listen.running()
+        idle = "inactivo (arranca al abrir Claude Code)" if cfg["listen_on_start"] else "inactivo (talktome escucha)"
         print(f"Dictado:    {state} · tecla {cfg['listen_key']} · {cfg['stt_model']} · "
               f"{'tiempo real' if cfg['stt_realtime'] else 'por lotes'} · "
-              f"{f'escuchando (proceso {active})' if active else 'inactivo (talktome escucha)'}")
+              f"{f'escuchando (proceso {active})' if active else idle}")
     else:
         print("Dictado:    solo en Windows por ahora")
     if cfg["api_key"]:
@@ -237,14 +238,27 @@ def cmd_lines(args, cfg):
 
 
 def cmd_listen(args, cfg):
+    if args.detener:
+        print("Escucha detenida." if listen.stop_listening() else "No había ninguna escucha activa.")
+        return 0
     if not mic.available():
         print("El dictado por voz funciona en Windows por ahora.", file=sys.stderr)
         return 1
     try:
-        listen.serve(cfg, key=args.tecla)
+        if args.fondo:
+            listen.serve(cfg, key=args.tecla, out=lambda text: None, background=True)
+        else:
+            listen.serve(cfg, key=args.tecla)
     except (mic.MicError, ValueError) as e:
-        print(e, file=sys.stderr)
-        return 1
+        if args.fondo:
+            hooks.log(f"escucha en segundo plano: {e}")
+        else:
+            print(e, file=sys.stderr)
+            return 1
+    except Exception:
+        if not args.fondo:
+            raise
+        _log_error()  # Detached: nobody is watching the console.
     return 0
 
 
@@ -282,7 +296,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="talktome", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("hook", help="usado por Claude Code")
-    p.add_argument("event", choices=["stop", "notification", "session", "prompt"])
+    p.add_argument("event", choices=["stop", "notification", "session", "prompt", "end"])
     p.set_defaults(fn=cmd_hook)
     p = sub.add_parser("_speak")
     p.add_argument("kind")
@@ -319,6 +333,8 @@ def main(argv=None):
     p.set_defaults(fn=cmd_lines)
     p = sub.add_parser("escucha", aliases=["listen"], help="dictado: mantenga una tecla, hable y se envía a Claude")
     p.add_argument("--tecla", help="tecla para hablar (por defecto la de la config, F9)")
+    p.add_argument("--fondo", action="store_true", help=argparse.SUPPRESS)  # launched by SessionStart
+    p.add_argument("--detener", action="store_true", help="detiene la escucha en segundo plano")
     p.set_defaults(fn=cmd_listen)
     p = sub.add_parser("oye", aliases=["hear"], help="transcribe sin enviar: un archivo o el micrófono")
     p.add_argument("archivo", nargs="?", help="audio a transcribir (sin él, graba hasta Enter)")

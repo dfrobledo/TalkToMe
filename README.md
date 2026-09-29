@@ -70,7 +70,7 @@ Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener e
 | `python talktome.py voices` | Listar tus voces con su ID |
 | `python talktome.py quota` | Caracteres disponibles en tu plan |
 | `python talktome.py frases` | Ver el banco de frases y las que inventó Claude (`--inventa`: pedir nuevas ya) |
-| `python talktome.py escucha` | Dictado: mantén F9, habla y suelta para enviar (Windows) |
+| `python talktome.py escucha` | Dictado a mano (normalmente arranca solo con Claude Code); `--detener` termina el de fondo |
 | `python talktome.py oye [archivo]` | Probar la transcripción sin enviar nada |
 | `python talktome.py stop` | Callar la frase en curso |
 | `python talktome.py mute` / `unmute` | Silenciar / reactivar a Rachel |
@@ -94,9 +94,7 @@ Un detalle largo puede ocupar unos 2.500 caracteres de ElevenLabs (unos tres min
 
 ## Háblale: dictado con una tecla (Fase 2, en desarrollo)
 
-```powershell
-python talktome.py escucha     # déjalo corriendo en su propia consola
-```
+**Arranca sola con Claude Code**: al abrir una sesión, Rachel empieza a escuchar en segundo plano, sin ventana, y se va cuando cierras la última sesión (o tras 2 horas sin actividad). No hay nada que lanzar. Si prefieres controlarla a mano: `"listen_on_start": false`, y luego `python talktome.py escucha` en su propia consola (`escucha --detener` para terminar la de fondo).
 
 Mantén **F9** mientras hablas y suéltala: suena un bip corto y Rachel se calla al instante. Al soltar la tecla, tus palabras se escriben en la terminal que tenías al frente y se envían solas, como si las hubieras tecleado.
 
@@ -180,6 +178,7 @@ Todas caben en la caché: cada frase gasta caracteres de ElevenLabs solo la prim
 | `greet_on_start`, `speak_notifications`, `interrupt_on_prompt` | `true` | |
 | `player` | `auto` | `mpv`, `ffplay` o `auto` |
 | `listen_key` | `"F9"` | Tecla del dictado |
+| `listen_on_start` | `true` | Escuchar en segundo plano mientras Claude Code esté abierto |
 | `stt_model` | `"scribe_v2"` | Modelo de Speech-to-Text de ElevenLabs |
 | `stt_keyterms` | `[]` | Palabras que Scribe debe esperar |
 | `stt_realtime` | `true` | Transcribir mientras hablas (Scribe v2 Realtime) |
@@ -224,7 +223,7 @@ La red de seguridad (resumen generado cuando una respuesta no trae el suyo) usa 
 - **Fase 1 — Rachel habla** ✅ (este repo): voz latina diseñada a medida, estilo Rachel, resumen hablado de cada respuesta con la pregunta pendiente primero, red de seguridad, saludos, avisos que esperan su turno, interrupción al escribir, "repite" y caché.
 - **Fase 2 — Rachel escucha** 🚧: dictado por voz hacia Claude Code.
   - **2a — Push-to-talk** (en desarrollo): mantener F9, hablar, soltar; Scribe transcribe en tiempo real y se envía solo. Acuse inmediato, interjecciones y progreso mientras Claude trabaja. "Calla" la silencia sin gastar turno.
-  - **2b — Comandos y permisos por voz**: responder "sí" o "no" a los permisos, arrancar la escucha junto con Claude Code.
+  - **2b — Comandos y permisos por voz**: responder "sí" o "no" a los permisos. (La escucha ya arranca sola con Claude Code.)
   - **2c — Palabra de activación "Rachel"**: escucha continua con un detector local.
 - **Fase 3 — Conversación fluida**: modo manos libres de ida y vuelta (voz → Claude Code → voz) con turnos, interrupciones naturales y resumen hablado del progreso de tareas largas.
 

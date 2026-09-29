@@ -2,6 +2,7 @@
 import ctypes
 import io
 import json
+import time
 import unittest
 from unittest import mock
 
@@ -329,3 +330,54 @@ class DeskTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class AutoStartTest(unittest.TestCase):
+    CFG = {**DEFAULTS, "api_key": "k", "greet_on_start": False}
+
+    def setUp(self):
+        import shutil
+
+        shutil.rmtree(hooks.OPEN_SESSIONS, ignore_errors=True)
+        hooks.LISTEN_DOZED.unlink(missing_ok=True)
+
+    def hook(self, event, session="s1", cfg=None, running=None):
+        with mock.patch("voice.mic.available", return_value=True), \
+                mock.patch("voice.listen.running", return_value=running), \
+                mock.patch("voice.hooks.player.stop"), \
+                mock.patch("voice.hooks.player.spawn") as spawn, mock.patch("voice.hooks._enqueue"):
+            hooks.handle(event, {"session_id": session, "cwd": "", "prompt": "hola"}, cfg or self.CFG)
+        return [c.args for c in spawn.call_args_list]
+
+    def test_session_start_launches_the_listener_once(self):
+        self.assertIn(("escucha", "--fondo"), self.hook("session"))
+        self.assertNotIn(("escucha", "--fondo"), self.hook("session", running=1234))
+        self.assertEqual(self.hook("session", cfg={**self.CFG, "listen_on_start": False}), [])
+
+    def test_open_sessions_keep_it_alive(self):
+        self.hook("session", "a")
+        self.hook("session", "b")
+        self.assertTrue(hooks.claude_open())
+        self.hook("end", "a")
+        self.assertTrue(hooks.claude_open())
+        self.hook("end", "b")
+        self.assertTrue(hooks.claude_open())  # a minute of grace, in case one reopens
+        self.assertFalse(hooks.claude_open(now=time.time() + 61))
+
+    def test_idle_for_hours_lets_it_go(self):
+        self.hook("session", "a")
+        self.assertFalse(hooks.claude_open(idle_minutes=120, now=time.time() + 121 * 60))
+
+    def test_next_prompt_wakes_a_dozing_listener(self):
+        self.assertNotIn(("escucha", "--fondo"), self.hook("prompt"))
+        hooks.LISTEN_DOZED.touch()
+        self.assertIn(("escucha", "--fondo"), self.hook("prompt"))
+        self.assertFalse(hooks.LISTEN_DOZED.exists())
+
+    def test_run_leaves_when_claude_is_gone(self):
+        desk = FakeDesk(held=0)
+        desk.clock = Clock()
+        listener = listen.Listener(DEFAULTS, desk, clock=desk.clock, sleep=desk.clock.sleep, out=lambda t: None)
+        answers = iter([True, True, False])
+        listener.run(alive=lambda: next(answers))
+        self.assertAlmostEqual(desk.clock.now, 15, delta=0.1)  # checked every 5 s

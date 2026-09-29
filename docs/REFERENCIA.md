@@ -15,7 +15,8 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 | `talktome.py voices` | Lista las voces de su cuenta de ElevenLabs. |
 | `talktome.py quota` | Caracteres usados y disponibles. |
 | `talktome.py frases [--inventa]` · `lines` | Banco de frases e inventadas; `--inventa` pide nuevas ya. |
-| `talktome.py escucha [--tecla T]` · `listen` | Dictado (solo Windows): mantenga la tecla, hable y suéltela; el texto se escribe en la ventana activa y se envía. Ctrl+C para salir. Una sola escucha a la vez. |
+| `talktome.py escucha [--tecla T]` · `listen` | Dictado (solo Windows): mantenga la tecla, hable y suéltela; el texto se escribe en la ventana activa y se envía. Ctrl+C para salir. Una sola escucha a la vez. Normalmente no hace falta: arranca sola con Claude Code. |
+| `talktome.py escucha --detener` | Termina la escucha en segundo plano. |
 | `talktome.py oye [archivo]` · `hear` | Transcribe sin enviar nada: un archivo de audio o, en Windows, el micrófono hasta Enter. |
 | `talktome.py stop` | Calla lo que se esté diciendo. |
 | `talktome.py mute` / `unmute` | Silencia o reactiva a Rachel (bandera `~/.talktome/muted`). |
@@ -26,7 +27,8 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 
 | Comando | Lo lanza | Qué hace |
 |---|---|---|
-| `hook <session\|prompt\|notification\|stop>` | Claude Code | Lee el JSON de stdin y llama a `hooks.handle`; imprime la decisión si la hay. |
+| `hook <session\|prompt\|notification\|stop\|end>` | Claude Code | Lee el JSON de stdin y llama a `hooks.handle`; imprime la decisión si la hay. |
+| `escucha --fondo` | hook `session` (o `prompt` tras una pausa) | La escucha sin consola; se va cuando Claude Code se cierra. |
 | `_speak <reply\|say> <payload.json>` | `hooks._enqueue` | Worker: `hooks.work`. Borra el payload al leerlo. |
 | `_repeat [sesión] [cwd]` | hook `prompt` | Repite la última respuesta de esa sesión. |
 | `_detail [sesión] [cwd]` | hook `prompt` | Narra el detalle de la última respuesta de esa sesión. |
@@ -77,6 +79,8 @@ Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.j
 | `speak_notifications` | `true` | Decir permisos y recordatorios. |
 | `interrupt_on_prompt` | `true` | Escribir calla a Rachel en esa terminal. |
 | `listen_key` | `"F9"` | Tecla de `escucha`: F1–F24, `Pause`, `ScrollLock`, `RightCtrl`, `RightAlt` o un código `0x..`. |
+| `listen_on_start` | `true` | Arrancar la escucha en segundo plano con cada sesión (Windows). |
+| `listen_idle_minutes` | 120 | Sin ninguna actividad de Claude Code durante este tiempo, la escucha se va. |
 | `listen_min_seconds` | 0.4 | Pulsaciones más cortas se ignoran. |
 | `listen_max_seconds` | 120 | Al llegar aquí se envía aunque siga presionada. |
 | `stt_model` | `"scribe_v2"` | Modelo de Speech-to-Text de ElevenLabs. |
@@ -115,6 +119,7 @@ Variables de entorno:
 | `detail(cfg, session=None)` | Narra el detalle de la última respuesta de la sesión. |
 | `compose_reply(markdown, cfg, summarize=None)` | Qué decir de una respuesta (ver las tres capas en ARQUITECTURA). |
 | `is_repeat(prompt)` / `is_detail(prompt)` / `is_stop(prompt)` | ¿El mensaje completo es "repite"/"detalle"/"calla"? |
+| `track(event, session)` / `claude_open(idle, grace)` / `start_listening()` | Sesiones abiertas y actividad; ¿sigue Claude Code en uso?; lanza la escucha si no corre. |
 | `mark_dictated(text)` / `was_dictated(prompt)` | La escucha anota lo que dictó; el hook `prompt` reconoce el turno por voz (una vez, hasta 30 s). |
 | `narrates(cfg, voice)` | ¿Acompañar este turno? Según `narrate_progress`, silencio y clave. |
 | `announces(cfg)` | ¿Está activo el distintivo de proyecto? |
@@ -191,6 +196,9 @@ Variables de entorno:
 | `dictated.json` | `hooks.mark_dictated` | Texto y hora del último dictado; el hook `prompt` lo consume. |
 | `sessions/<id>/prompt-at` | hook `prompt` | Hora del último prompt, para medir el turno de Claude. |
 | `sessions/<id>/turn-done` | hook `stop` | El turno terminó: el acompañante se calla. |
+| `open-sessions/<id>` | hooks `session` / `end` | Sesiones de Claude Code abiertas. |
+| `claude-activity` | todos los hooks | Última actividad de Claude Code. |
+| `listen-dozed` | `listen.serve` | La escucha se fue por inactividad; el próximo prompt la despierta. |
 | `sessions/<id>/project` | `player.remember_project` | Nombre hablado del proyecto. |
 | `sessions/<id>/worker.pid` | `player.claim` | Worker activo de esa sesión. |
 | `sessions/<id>/last-reply.txt` | `player` | Texto de la última respuesta dicha. |

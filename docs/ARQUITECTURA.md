@@ -47,6 +47,7 @@ flowchart LR
         H2["UserPromptSubmit"]
         H3["Notification"]
         H4["Stop"]
+        H5["SessionEnd"]
     end
     CC --> Hooks
     Hooks -- "stdin JSON" --> HK["talktome.py hook &lt;evento&gt;"]
@@ -61,14 +62,15 @@ flowchart LR
     W <--> ST[("~/.talktome<br/>estado, caché, log")]
 ```
 
-Los cuatro eventos que TalkToMe escucha:
+Los cinco eventos que TalkToMe escucha:
 
 | Evento | Handler | Efecto |
 |---|---|---|
-| `SessionStart` | `hooks.handle("session")` | Encola el saludo, con el nombre del proyecto. |
-| `UserPromptSubmit` | `hooks.handle("prompt")` | Calla a Rachel en esa terminal; intercepta "repite" y "detalle". |
+| `SessionStart` | `hooks.handle("session")` | Encola el saludo, con el nombre del proyecto, y arranca la escucha en segundo plano si no está corriendo. |
+| `UserPromptSubmit` | `hooks.handle("prompt")` | Calla a Rachel en esa terminal; intercepta "repite", "detalle" y "calla"; acompaña los turnos dictados. |
 | `Notification` | `hooks.handle("notification")` | Permisos, pedidos de atención y recordatorios de espera. |
 | `Stop` | `hooks.handle("stop")` | Encola la respuesta final para decirla. |
+| `SessionEnd` | `hooks.handle("end")` | Marca la sesión como cerrada: sin sesiones abiertas, la escucha se va. |
 
 ## 3. Módulos y dependencias
 
@@ -390,7 +392,7 @@ flowchart LR
 
 ## 11. Instalación en Claude Code
 
-`install.py` edita `~/.claude/settings.json` (con copia `settings.json.bak-talktome`) y es idempotente: primero quita cualquier hook suyo (los reconoce por `talktome.py` en el comando) y luego añade los cuatro.
+`install.py` edita `~/.claude/settings.json` (con copia `settings.json.bak-talktome`) y es idempotente: primero quita cualquier hook suyo (los reconoce por `talktome.py` en el comando) y luego añade los cinco.
 
 ```mermaid
 flowchart TD
@@ -398,7 +400,7 @@ flowchart TD
     B --> X["quita hooks previos de TalkToMe"]
     X --> U{"--uninstall"}
     U -- sí --> U1["quita outputStyle Rachel y rachel.md"]
-    U -- no --> H["añade SessionStart, UserPromptSubmit,<br/>Notification, Stop (timeout 10 s)"]
+    U -- no --> H["añade SessionStart, UserPromptSubmit,<br/>Notification, Stop, SessionEnd (timeout 10 s)"]
     H --> S["copia rachel.md a ~/.claude/output-styles"]
     S --> NS{"--no-style"}
     NS -- no --> A["outputStyle = Rachel"]
@@ -500,6 +502,17 @@ Un silencio largo después de hablar se siente como si nadie hubiera oído. Por 
 4. **Fin**: el hook `Stop` escribe `turn-done` y el worker de la respuesta reclama la sesión, lo que mata al acompañante. Si el acompañante llega tarde y el turno ya terminó, no reclama nada, para no cortar la respuesta.
 
 Nada de esto toca a Claude: solo lee el transcript, así que no agrega latencia ni cambia el análisis.
+
+### Arranque automático
+
+La escucha es un proceso aparte, y nadie quiere abrir una consola más. Por eso el hook `SessionStart` la lanza sin ventana (`escucha --fondo`, con `player.spawn`) cuando no hay una corriendo. `listen.pid` se crea de forma atómica: si dos terminales abren a la vez, arranca una sola.
+
+Se tiene que ir sola, porque mientras corre se queda con F9 en todo Windows. Cada hook anota actividad (`claude-activity`), y `SessionStart` y `SessionEnd` mantienen `open-sessions/`. Cada 5 segundos la escucha pregunta `hooks.claude_open()`:
+
+- **Sin sesiones abiertas**, pasado un minuto de gracia por si abre otra, termina.
+- **Sin actividad en `listen_idle_minutes`** (2 horas por defecto; cubre terminales cerradas a la fuerza, que no avisan con `SessionEnd`), también. Si todavía había sesiones abiertas, deja `listen-dozed` y el próximo prompt la despierta.
+
+`escucha --detener` la termina a mano; `"listen_on_start": false` la apaga.
 
 ### Tiempos
 

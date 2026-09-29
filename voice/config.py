@@ -50,6 +50,10 @@ DEFAULTS = {
     "interrupt_on_prompt": True,
     # Dictation (talktome escucha): hold this key, speak, release to send.
     "listen_key": "F9",
+    # Start listening in the background with Claude Code (Windows), and stop
+    # once every session closed or after this long without any activity.
+    "listen_on_start": True,
+    "listen_idle_minutes": 120,
     "listen_min_seconds": 0.4,
     "listen_max_seconds": 120,
     # ElevenLabs Scribe; keyterms: words it should expect (names, jargon).

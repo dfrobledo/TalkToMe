@@ -49,10 +49,17 @@ class Listener:
         self.hush, self.acknowledge = hush, acknowledge
         self.clock, self.sleep, self.out = clock, sleep, out
 
-    def run(self):
+    def run(self, alive=None, every=5.0):
+        """Dictations until Ctrl+C, or until `alive()` says Claude Code is gone."""
         while True:
+            waited = 0.0
             while not self.desk.key_down():
                 self.sleep(POLL)
+                waited += POLL
+                if alive and waited >= every:
+                    if not alive():
+                        return
+                    waited = 0.0
             self.dictate()
             while self.desk.key_down():  # held past the time limit
                 self.sleep(POLL)
@@ -140,20 +147,65 @@ def running():
     return pid if pid != os.getpid() and player._alive(pid) else None
 
 
-def serve(cfg, key=None, out=print):
-    """`talktome escucha`: listen until Ctrl+C."""
-    key = key or cfg.get("listen_key", "F9")
-    other = running()
-    if other:
-        raise mic.MicError(f"Ya hay una escucha activa (proceso {other}).")
-    desk = mic.Desk(key)
+def _lock():
+    """Become the one listener. Atomic: two sessions opening at once start only one."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    PID_FILE.write_text(str(os.getpid()))
+    for _ in range(3):
+        try:
+            fd = os.open(PID_FILE, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            other = running()
+            if other:
+                raise mic.MicError(f"Ya hay una escucha activa (proceso {other}).")
+            try:
+                if time.time() - PID_FILE.stat().st_mtime < 2 and not PID_FILE.read_text():
+                    raise mic.MicError("Otra escucha está arrancando.")  # being written right now
+                PID_FILE.unlink()  # its owner died
+            except OSError:
+                pass
+            continue
+        with os.fdopen(fd, "w") as f:
+            f.write(str(os.getpid()))
+        return
+    raise mic.MicError("No pude tomar la escucha.")
+
+
+def stop_listening():
+    """End the listener running in the background. False if there was none."""
+    pid = running()
+    if pid:
+        player._kill(pid)
+        PID_FILE.unlink(missing_ok=True)
+    return bool(pid)
+
+
+def serve(cfg, key=None, out=print, background=False):
+    """`talktome escucha`: listen until Ctrl+C. In the `background` (launched by
+    SessionStart) there is no console, and it leaves once Claude Code closes."""
+    key = key or cfg.get("listen_key", "F9")
+    _lock()
+    try:
+        desk = mic.Desk(key)
+    except Exception:
+        PID_FILE.unlink(missing_ok=True)
+        raise
+    alive = None
+    idle = cfg.get("listen_idle_minutes", 120)
+    hooks.LISTEN_DOZED.unlink(missing_ok=True)
+    if background:
+        alive = lambda: hooks.claude_open(idle)  # noqa: E731
+        hooks.log(f"escucha en segundo plano: mantenga {key} para hablar")
     try:
         out(f"Rachel escucha: mantenga {key} mientras habla y suéltela para enviar. Ctrl+C para salir.")
         if not desk.exclusive:
             out(f"  Aviso: otro programa ya usa {key}; la tecla también le llegará a la ventana activa.")
-        Listener(cfg, desk, out=out).run()
+        Listener(cfg, desk, out=out).run(alive=alive)
+        if background:
+            if any(hooks.OPEN_SESSIONS.glob("*")):
+                hooks.LISTEN_DOZED.touch()  # the next prompt wakes it up
+                hooks.log(f"escucha en pausa: {idle} min sin actividad en Claude Code")
+            else:
+                hooks.log("escucha terminada: Claude Code se cerró")
     except KeyboardInterrupt:
         out("Rachel deja de escuchar.")
     finally:
