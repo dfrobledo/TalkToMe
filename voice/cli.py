@@ -5,7 +5,9 @@ import json
 import sys
 import traceback
 
-from . import config, deck, hooks, lines, persona, player, projects, tts
+from pathlib import Path
+
+from . import config, deck, hooks, lines, listen, mic, persona, player, projects, stt, tts
 from .player import LOG_FILE
 
 SAMPLE = (
@@ -176,6 +178,20 @@ def cmd_doctor(args, cfg):
     print(f"Audio:      {audio or 'FALTA reproductor (instala mpv)'}")
     ok &= bool(audio)
     print(f"Silencio:   {'activado (talktome unmute)' if cfg['muted'] else 'no'}")
+    if mic.available():
+        try:
+            recorder = mic.Recorder()
+            recorder.start()
+            recorder.cancel()
+            state = "micrófono OK"
+        except mic.MicError as e:
+            state = f"FALLA el {e}"
+            ok = False
+        active = listen.running()
+        print(f"Dictado:    {state} · tecla {cfg['listen_key']} · {cfg['stt_model']} · "
+              f"{f'escuchando (proceso {active})' if active else 'inactivo (talktome escucha)'}")
+    else:
+        print("Dictado:    solo en Windows por ahora")
     if cfg["api_key"]:
         try:
             cmd_quota(args, cfg)
@@ -208,6 +224,43 @@ def cmd_lines(args, cfg):
     print(f"Inventadas por Claude ({len(invented)}, se borran en {deck.STATE_FILE}):")
     for line in invented:
         print("  " + line.format(h=cfg["honorific"]))
+    return 0
+
+
+def cmd_listen(args, cfg):
+    if not mic.available():
+        print("El dictado por voz funciona en Windows por ahora.", file=sys.stderr)
+        return 1
+    try:
+        listen.serve(cfg, key=args.tecla)
+    except (mic.MicError, ValueError) as e:
+        print(e, file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_hear(args, cfg):
+    """Transcribe without typing anything: a file, or the microphone until Enter."""
+    if args.archivo:
+        path = Path(args.archivo)
+        audio = path.read_bytes()
+    elif mic.available():
+        recorder = mic.Recorder()
+        try:
+            recorder.start()
+            input("Hable ahora; pulse Enter para terminar...")
+            path = listen.LAST_AUDIO
+            audio = recorder.stop(path)
+        except mic.MicError as e:
+            recorder.cancel()
+            print(e, file=sys.stderr)
+            return 1
+    else:
+        print("Sin Windows no puedo grabar: pase un archivo de audio (talktome oye voz.wav).", file=sys.stderr)
+        return 1
+    print("Transcribiendo...")
+    text = stt.clean(stt.transcribe(audio, cfg, filename=path.name))
+    print(f"» {text}" if text else "(no se entendieron palabras)")
     return 0
 
 
@@ -251,6 +304,12 @@ def main(argv=None):
     p = sub.add_parser("frases", aliases=["lines"], help="frases de Rachel, incluidas las inventadas")
     p.add_argument("--inventa", action="store_true", help="pedirle a Claude frases nuevas ahora")
     p.set_defaults(fn=cmd_lines)
+    p = sub.add_parser("escucha", aliases=["listen"], help="dictado: mantenga una tecla, hable y se envía a Claude")
+    p.add_argument("--tecla", help="tecla para hablar (por defecto la de la config, F9)")
+    p.set_defaults(fn=cmd_listen)
+    p = sub.add_parser("oye", aliases=["hear"], help="transcribe sin enviar: un archivo o el micrófono")
+    p.add_argument("archivo", nargs="?", help="audio a transcribir (sin él, graba hasta Enter)")
+    p.set_defaults(fn=cmd_hear)
     sub.add_parser("stop", help="calla la frase en curso").set_defaults(fn=cmd_stop)
     sub.add_parser("mute", help="silencia a Rachel").set_defaults(fn=cmd_mute)
     sub.add_parser("unmute", help="reactiva la voz").set_defaults(fn=cmd_mute)

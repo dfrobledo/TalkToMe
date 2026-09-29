@@ -19,6 +19,7 @@ Este documento explica cómo está armado por dentro. Para instalarlo y usarlo, 
 11. [Instalación en Claude Code](#11-instalación-en-claude-code)
 12. [Errores y diagnóstico](#12-errores-y-diagnóstico)
 13. [Cómo extenderlo](#13-cómo-extenderlo)
+14. [Dictado: Rachel escucha](#14-dictado-rachel-escucha)
 
 ---
 
@@ -422,7 +423,7 @@ El comando del hook está pensado para funcionar igual en Git Bash y en PowerShe
 | Otro reproductor | `STREAM_PLAYERS` o `FILE_PLAYERS` en `player.py`. |
 | Otra palabra de comando como "repite" | Un conjunto como `REPEAT_WORDS` + rama en `handle` que devuelva `block`. |
 | Una voz por proyecto | Sin código: `projects` en `talktome.config.json`. |
-| Fase 2, dictado por voz | Un nuevo productor de prompts; el lado de la voz (sesiones, turnos, interrupción) ya está listo para varias fuentes. |
+| Otra palabra que el dictado resuelva sin Claude | Como `STOP_WORDS` en `hooks.py` + una rama en `Listener.dictate`. |
 
 ```bash
 python -m unittest -v   # sin red ni audio
@@ -433,3 +434,38 @@ python -m unittest -v   # sin red ni audio
 | `tests/test_speech.py` | Limpieza de markdown, resumen hablado, `compose_reply`, "repite", "detalle", turnos, transcript. |
 | `tests/test_lines.py` | Mazos, escalada, hora del día, fechas especiales, frases inventadas. |
 | `tests/test_sessions.py` | Aislamiento por sesión, turno atómico, interrupción por terminal, distintivos, proyectos. |
+| `tests/test_listen.py` | Dictado con un escritorio simulado, "calla", petición a Scribe, limpieza, teclas y estructuras de Windows. |
+
+## 14. Dictado: Rachel escucha
+
+`talktome.py escucha` es un proceso aparte que corre en su propia consola. No es un hook: produce prompts como si usted los tecleara, y por eso todo lo de Claude Code (hooks, "repite", "detalle", permisos) funciona igual que con el teclado.
+
+```mermaid
+sequenceDiagram
+    participant U as Usted
+    participant L as escucha (listen.py)
+    participant EL as ElevenLabs Scribe
+    participant T as Terminal de Claude Code
+    U->>L: mantiene F9
+    L->>L: recuerda la ventana activa · player.stop() · empieza a grabar (MCI) · bip
+    U->>L: habla y suelta F9
+    L->>EL: WAV 16 kHz (multipart, language_code es)
+    EL-->>L: texto
+    alt "calla", "silencio"…
+        L->>L: nada más: ya se calló al presionar
+    else la ventana sigue al frente
+        L->>T: SendInput Unicode + Enter
+        T->>T: hook UserPromptSubmit (repite / detalle / prompt normal)
+    else la ventana cambió
+        L->>L: texto al portapapeles + bip grave
+    end
+```
+
+Decisiones:
+
+- **Sin dependencias**: la tecla (`RegisterHotKey` + `GetAsyncKeyState`), el micrófono (MCI de `winmm`) y el teclado (`SendInput` con `KEYEVENTF_UNICODE`) son llamadas a Windows con `ctypes`. Por eso el dictado es solo para Windows por ahora.
+- **La tecla como hotkey**: así no le llega a la terminal (F9 escribiría una secuencia de escape en el prompt). Si otro programa ya la tiene, se sigue detectando pero también le llega a la ventana, y `escucha` lo avisa.
+- **El Enter aparte**: el texto y el Enter van en dos ráfagas separadas por 150 ms, para que la terminal no tome el Enter como parte de un pegado.
+- **La ventana de origen**: se escribe en la ventana que estaba al frente al presionar la tecla. Si al terminar de transcribir ya no lo está y Windows no deja traerla de vuelta, el texto queda en el portapapeles en vez de ir a parar a otra aplicación.
+- **"Calla" no llega a Claude**: se resuelve en local. Escrito a mano, el hook `prompt` también lo bloquea.
+- **Probado sin Windows**: `Listener` recibe el escritorio (`mic.Desk`) y la transcripción como dependencias; las pruebas usan un escritorio simulado con reloj falso.

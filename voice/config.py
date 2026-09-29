@@ -48,6 +48,13 @@ DEFAULTS = {
     "greet_on_start": True,
     "speak_notifications": True,
     "interrupt_on_prompt": True,
+    # Dictation (talktome escucha): hold this key, speak, release to send.
+    "listen_key": "F9",
+    "listen_min_seconds": 0.4,
+    "listen_max_seconds": 120,
+    # ElevenLabs Scribe; keyterms: words it should expect (names, jargon).
+    "stt_model": "scribe_v2",
+    "stt_keyterms": [],
     "cache_max_chars": 160,
     "player": "auto",
 }

@@ -85,6 +85,12 @@ DETAIL_WORDS = {
 }
 
 
+STOP_WORDS = {
+    "calla", "callate", "callese", "silencio", "guarda silencio", "basta", "ya basta",
+    "alto", "detente", "suficiente", "shh", "shhh",
+}
+
+
 def _command(prompt):
     """The prompt reduced to bare words: no accents, punctuation, name or courtesy."""
     text = unicodedata.normalize("NFKD", (prompt or "").lower())
@@ -97,6 +103,11 @@ def _command(prompt):
 def is_repeat(prompt):
     """Is the whole prompt just asking Rachel to say her last reply again?"""
     return _command(prompt) in REPEAT_WORDS
+
+
+def is_stop(prompt):
+    """Is the whole prompt just asking Rachel to be quiet?"""
+    return _command(prompt) in STOP_WORDS
 
 
 def is_detail(prompt):
@@ -122,6 +133,9 @@ def handle(event, payload, cfg):
             player.stop(session)
             player.spawn("_detail", session, payload.get("cwd") or "")
             return {"decision": "block", "reason": "Rachel le lee el detalle de su última respuesta."}
+        if is_stop(prompt):
+            player.stop(session)
+            return {"decision": "block", "reason": "Rachel guarda silencio."}
         if is_repeat(prompt):
             player.stop(session)
             player.spawn("_repeat", session, payload.get("cwd") or "")

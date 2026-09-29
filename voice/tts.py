@@ -19,17 +19,20 @@ class TTSError(RuntimeError):
     pass
 
 
-def _request(path, cfg, body=None, method="GET"):
+def _request(path, cfg, body=None, method="GET", data=None, content_type="application/json", timeout=30):
+    """Call ElevenLabs: `body` goes as JSON, `data` as raw bytes of `content_type`."""
     if not cfg.get("api_key"):
         raise TTSError("Falta ELEVENLABS_API_KEY (ponla en .env).")
+    if body is not None:
+        data = json.dumps(body).encode()
     req = urllib.request.Request(
         API + path,
-        data=json.dumps(body).encode() if body is not None else None,
+        data=data,
         method=method,
-        headers={"xi-api-key": cfg["api_key"], "Content-Type": "application/json"},
+        headers={"xi-api-key": cfg["api_key"], "Content-Type": content_type},
     )
     try:
-        return urllib.request.urlopen(req, timeout=30)
+        return urllib.request.urlopen(req, timeout=timeout)
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")[:300]
         raise TTSError(f"ElevenLabs {e.code}: {detail}") from e
