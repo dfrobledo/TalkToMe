@@ -7,7 +7,7 @@ import traceback
 
 from pathlib import Path
 
-from . import config, deck, hooks, lines, listen, mic, persona, player, projects, stt, tts
+from . import companion, config, deck, hooks, lines, listen, mic, persona, player, projects, stt, tts
 from .player import LOG_FILE
 
 SAMPLE = (
@@ -90,6 +90,14 @@ def cmd_repeat(args, cfg):
             raise
     finally:
         player.release(session)
+    return 0
+
+
+def cmd_accompany(args, cfg):
+    try:
+        companion.accompany(cfg, args.session, args.transcript)
+    except Exception:
+        _log_error()  # Detached: nobody is watching the console.
     return 0
 
 
@@ -189,6 +197,7 @@ def cmd_doctor(args, cfg):
             ok = False
         active = listen.running()
         print(f"Dictado:    {state} · tecla {cfg['listen_key']} · {cfg['stt_model']} · "
+              f"{'tiempo real' if cfg['stt_realtime'] else 'por lotes'} · "
               f"{f'escuchando (proceso {active})' if active else 'inactivo (talktome escucha)'}")
     else:
         print("Dictado:    solo en Windows por ahora")
@@ -289,6 +298,10 @@ def main(argv=None):
     p.add_argument("session", nargs="?")
     p.add_argument("cwd", nargs="?")
     p.set_defaults(fn=cmd_detail)
+    p = sub.add_parser("_acompana")
+    p.add_argument("session")
+    p.add_argument("transcript")
+    p.set_defaults(fn=cmd_accompany)
     p = sub.add_parser("say", help="dice un texto (o una frase de prueba)")
     p.add_argument("text", nargs="*")
     p.set_defaults(fn=cmd_say)

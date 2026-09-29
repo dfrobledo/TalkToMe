@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest import mock
 
-from voice import hooks, listen, mic, stt
+from voice import hooks, listen, mic, realtime, stt
 from voice.config import DEFAULTS
 from voice.tts import TTSError
 
@@ -14,10 +14,13 @@ class FakeRecorder:
     def __init__(self, fail=None):
         self.fail, self.state = fail, "new"
 
-    def start(self):
+    def start(self, on_chunk=None):
         if self.fail:
             raise mic.MicError(self.fail)
         self.state = "recording"
+        if on_chunk:
+            on_chunk(b"PCM1")
+            on_chunk(b"PCM2")
 
     def stop(self, path):
         self.state = "saved"
@@ -68,15 +71,38 @@ class Clock:
         self.now += seconds
 
 
-def dictate(desk, heard="Revisa las pruebas del módulo de telemetría.", cfg=None, transcribe=None):
+class FakeStream:
+    """Scribe Realtime stand-in: says `heard`, or fails with `fail`."""
+
+    def __init__(self, heard=None, fail=None):
+        self.heard, self.fail, self.fed, self.state = heard, fail, [], "open"
+
+    def feed(self, pcm):
+        self.fed.append(pcm)
+
+    def finish(self, timeout):
+        if self.fail:
+            raise TTSError(self.fail)
+        self.state = "finished"
+        return self.heard
+
+    def cancel(self):
+        self.state = "cancelled"
+
+
+def dictate(desk, heard="Revisa las pruebas del módulo de telemetría.", cfg=None, transcribe=None, stream=None):
     clock = Clock()
     desk.clock = clock
     out = []
+    hush, acknowledge = mock.Mock(), mock.Mock()
     listener = listen.Listener(cfg or DEFAULTS, desk, transcribe=transcribe or (lambda audio, cfg: heard),
+                               stream=lambda cfg: stream, hush=hush, acknowledge=acknowledge,
                                clock=clock, sleep=clock.sleep, out=out.append)
-    with mock.patch("voice.listen.player.stop") as stop, mock.patch("voice.listen.hooks.log"):
+    with mock.patch("voice.listen.hooks.log"):
         text = listener.dictate()
-    return text, stop, out
+    listener.acknowledged = acknowledge
+    desk.listener = listener
+    return text, hush, out
 
 
 class ListenerTest(unittest.TestCase):
@@ -87,11 +113,14 @@ class ListenerTest(unittest.TestCase):
         self.assertEqual(desk.typed, [(text, 7)])
         self.assertEqual(desk.beeps, ["start"])
         stop.assert_called_once_with()  # pressing the key silences Rachel at once
+        desk.listener.acknowledged.assert_called_once()  # "Entendido, señor."
+        self.assertTrue(hooks.was_dictated(text))  # the prompt hook will know it was spoken
 
     def test_a_tap_is_not_a_dictation(self):
         desk = FakeDesk(held=0.1)
         text, stop, _ = dictate(desk, transcribe=lambda *a: self.fail("nothing to transcribe"))
         self.assertEqual((text, desk.typed, desk.rec.state), ("", [], "cancelled"))
+        self.assertEqual(desk.beeps, ["start", "short"])  # so you know it was too short
 
     def test_nothing_said_types_nothing(self):
         desk = FakeDesk()
@@ -104,6 +133,7 @@ class ListenerTest(unittest.TestCase):
         self.assertEqual((text, desk.typed), ("", []))
         stop.assert_called_once_with()
         self.assertIn("Rachel calla", out[0])
+        desk.listener.acknowledged.assert_not_called()
 
     def test_repite_goes_to_claude_code_where_its_hook_handles_it(self):
         desk = FakeDesk()
@@ -131,11 +161,95 @@ class ListenerTest(unittest.TestCase):
         text, _, out = dictate(desk)
         self.assertEqual((text, desk.beeps), ("", ["error"]))
 
+    def test_realtime_text_wins_and_audio_streams_while_recording(self):
+        desk, stream = FakeDesk(), FakeStream("Corre las pruebas.")
+        text, _, _ = dictate(desk, stream=stream, transcribe=lambda *a: self.fail("batch not needed"))
+        self.assertEqual(text, "Corre las pruebas.")
+        self.assertEqual(stream.fed, [b"PCM1", b"PCM2"])
+
+    def test_realtime_failure_falls_back_to_batch(self):
+        desk, stream = FakeDesk(), FakeStream(fail="Scribe en tiempo real: auth_error")
+        text, _, _ = dictate(desk, heard="Por lotes.", stream=stream)
+        self.assertEqual(text, "Por lotes.")
+
+    def test_tap_cancels_the_stream(self):
+        desk, stream = FakeDesk(held=0.1), FakeStream("x")
+        dictate(desk, stream=stream)
+        self.assertEqual(stream.state, "cancelled")
+
     def test_held_too_long_is_sent_at_the_limit(self):
         desk = FakeDesk(held=999)
         text, _, _ = dictate(desk, cfg={**DEFAULTS, "listen_max_seconds": 3})
         self.assertTrue(text)
         self.assertAlmostEqual(desk.clock.now, 3, delta=0.1)
+
+
+class RealtimeTest(unittest.TestCase):
+    def test_frames_round_trip(self):
+        for size in (0, 5, 125, 126, 70000):
+            payload = bytes(range(256)) * (size // 256) + bytes(size % 256)
+            frame = realtime.encode_frame(payload, mask=b"\x01\x02\x03\x04")
+            data = io.BytesIO(frame)
+            fin, opcode, back = realtime.read_frame(data.read)
+            self.assertEqual((fin, opcode, back), (True, realtime.OP_TEXT, payload))
+            self.assertEqual(data.read(), b"")
+
+    def test_url(self):
+        cfg = {**DEFAULTS, "stt_keyterms": ["RockAvionics", "una frase demasiado larga para realtime"]}
+        url = realtime.url(cfg)
+        self.assertTrue(url.startswith("wss://api.elevenlabs.io/v1/speech-to-text/realtime?model_id=scribe_v2_realtime"))
+        for part in ("audio_format=pcm_16000", "commit_strategy=manual", "language_code=es", "keyterms=RockAvionics"):
+            self.assertIn(part, url)
+        self.assertNotIn("demasiado", url)
+
+    def test_stream(self):
+        server = FakeSocket([{"message_type": "session_started"},
+                             {"message_type": "partial_transcript", "text": "Corre las"},
+                             {"message_type": "committed_transcript", "text": "Corre las pruebas."}])
+        stream = realtime.Stream(DEFAULTS, connect=lambda: server)
+        stream.feed(b"\x00\x01" * 10)
+        self.assertEqual(stream.finish(timeout=2), "Corre las pruebas.")
+        sent = [json.loads(m) for m in server.sent]
+        self.assertEqual(sent[0]["message_type"], "input_audio_chunk")
+        self.assertEqual((sent[0]["commit"], sent[0]["sample_rate"]), (False, 16000))
+        self.assertTrue(sent[-1]["commit"])
+
+    def test_stream_error(self):
+        server = FakeSocket([{"message_type": "auth_error", "error": "invalid api key"}])
+        stream = realtime.Stream(DEFAULTS, connect=lambda: server)
+        with self.assertRaisesRegex(TTSError, "auth_error"):
+            stream.finish(timeout=2)
+
+    def test_stream_cannot_connect(self):
+        def refuse():
+            raise OSError("sin red")
+
+        stream = realtime.Stream(DEFAULTS, connect=refuse)
+        with self.assertRaisesRegex(TTSError, "sin red"):
+            stream.finish(timeout=2)
+
+
+class FakeSocket:
+    """Answers with `replies` only once the commit arrives, like Scribe."""
+
+    def __init__(self, replies):
+        import queue
+
+        self.replies, self.sent, self.inbox = replies, [], queue.Queue()
+        if replies and replies[0]["message_type"].endswith("error"):
+            self.inbox.put(json.dumps(replies[0]))
+
+    def send(self, text):
+        self.sent.append(text)
+        if json.loads(text)["commit"]:
+            for reply in self.replies:
+                self.inbox.put(json.dumps(reply))
+
+    def recv(self):
+        return self.inbox.get(timeout=5)
+
+    def close(self):
+        self.inbox.put(None)
 
 
 class StopWordsTest(unittest.TestCase):
@@ -200,8 +314,17 @@ class DeskTest(unittest.TestCase):
         self.assertEqual(events[-1].ki.dwFlags, mic.KEYEVENTF_KEYUP)
 
     @unittest.skipUnless(ctypes.sizeof(ctypes.c_void_p) == 8, "layout of 64-bit Windows")
-    def test_input_matches_win64_layout(self):
+    def test_structures_match_win64_layout(self):
         self.assertEqual(ctypes.sizeof(mic.INPUT), 40)
+        self.assertEqual(ctypes.sizeof(mic.WAVEHDR), 48)
+        self.assertEqual(ctypes.sizeof(mic.KBDLLHOOKSTRUCT), 24)
+        self.assertEqual(ctypes.sizeof(mic.WAVEFORMATEX), 18)
+
+    def test_wav(self):
+        import wave
+
+        with wave.open(io.BytesIO(stt.wav_bytes(b"\x00\x00" * 1600))) as w:
+            self.assertEqual((w.getframerate(), w.getnchannels(), w.getsampwidth(), w.getnframes()), (16000, 1, 2, 1600))
 
 
 if __name__ == "__main__":

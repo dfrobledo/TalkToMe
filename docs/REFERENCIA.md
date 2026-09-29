@@ -30,6 +30,7 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 | `_speak <reply\|say> <payload.json>` | `hooks._enqueue` | Worker: `hooks.work`. Borra el payload al leerlo. |
 | `_repeat [sesión] [cwd]` | hook `prompt` | Repite la última respuesta de esa sesión. |
 | `_detail [sesión] [cwd]` | hook `prompt` | Narra el detalle de la última respuesta de esa sesión. |
+| `_acompana <sesión> <transcript>` | hook `prompt` (turno por voz) | Interjecciones y progreso hasta que llegue la respuesta (`companion.accompany`). |
 
 ## Contrato con Claude Code
 
@@ -79,7 +80,12 @@ Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.j
 | `listen_min_seconds` | 0.4 | Pulsaciones más cortas se ignoran. |
 | `listen_max_seconds` | 120 | Al llegar aquí se envía aunque siga presionada. |
 | `stt_model` | `"scribe_v2"` | Modelo de Speech-to-Text de ElevenLabs. |
-| `stt_keyterms` | `[]` | Palabras que Scribe debe esperar (proyectos, jerga, nombres). |
+| `stt_keyterms` | `[]` | Palabras que Scribe debe esperar (proyectos, jerga, nombres). En tiempo real se usan hasta 50, de 20 caracteres como máximo. |
+| `stt_realtime` | `true` | Transcribir mientras se habla (Scribe v2 Realtime); si falla, Scribe por lotes. |
+| `stt_realtime_model` | `"scribe_v2_realtime"` | Modelo en tiempo real. |
+| `stt_realtime_timeout` | 5 | Segundos de espera del texto tras soltar la tecla antes de pasar a lotes. |
+| `voice_ack` | `true` | Acuse inmediato al enviar un dictado. |
+| `narrate_progress` | `"voice"` | Interjecciones y progreso: `voice` (turnos dictados), `always` u `off`. |
 | `cache_max_chars` | 160 | Frases hasta este largo se guardan en caché. |
 | `player` | `"auto"` | `mpv`, `ffplay` o `auto`. |
 
@@ -90,6 +96,7 @@ Variables de entorno:
 | `ELEVENLABS_API_KEY` | Clave (gana sobre `.env`). |
 | `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` | Reemplazan la voz o el modelo de la config. |
 | `ELEVENLABS_API_BASE` | Otra URL de la API (pruebas, proxy). |
+| `ELEVENLABS_WS_BASE` | Otra URL para Scribe en tiempo real (por defecto `wss://api.elevenlabs.io`). |
 | `TALKTOME_DISABLE` | Si existe, los hooks no hacen nada (lo usa el resumidor). |
 | `TALKTOME_STATE` | Carpeta de estado en lugar de `~/.talktome`. |
 | `TALKTOME_CONFIG` | Ruta del archivo de configuración. |
@@ -108,6 +115,8 @@ Variables de entorno:
 | `detail(cfg, session=None)` | Narra el detalle de la última respuesta de la sesión. |
 | `compose_reply(markdown, cfg, summarize=None)` | Qué decir de una respuesta (ver las tres capas en ARQUITECTURA). |
 | `is_repeat(prompt)` / `is_detail(prompt)` / `is_stop(prompt)` | ¿El mensaje completo es "repite"/"detalle"/"calla"? |
+| `mark_dictated(text)` / `was_dictated(prompt)` | La escucha anota lo que dictó; el hook `prompt` reconoce el turno por voz (una vez, hasta 30 s). |
+| `narrates(cfg, voice)` | ¿Acompañar este turno? Según `narrate_progress`, silencio y clave. |
 | `announces(cfg)` | ¿Está activo el distintivo de proyecto? |
 | `log(message)` | Una línea en `talktome.log`; rota a los 500 KB. |
 
@@ -151,13 +160,16 @@ Variables de entorno:
 | Módulo | API |
 |---|---|
 | `projects.py` | `identify(cwd, cfg) → (nombre, cfg)`, `root(cwd)`, `speakable_name(nombre)`. |
+| `persona.py` (dictado) | `ack(h)`, `thinking(h, tone, expressive)`, `activity(tool, input)` → read/edit/test/git/shell/web/agent/plan/other o `None`, `progress(kind, h)`. |
 | `deck.py` | `draw(nombre, opciones, fits)`, `waits(now)`, `first_time_today(clave, hoy)`, `invented()`, `add_invented(frases, keep)`. |
 | `summarizer.py` | `summarize(reply, cfg)`, `narrate(reply, spoken, cfg)`, `invent_lines(known, cfg, count)`; `""` si falla. |
-| `transcript.py` | `final_reply(path)`: texto final del último turno del asistente. |
+| `transcript.py` | `final_reply(path)`: texto final del último turno del asistente; `tool_calls(path, offset)` → herramientas nuevas y offset; `size(path)`. |
 | `tts.py` | `stream`, `wav`, `cache_path`, `design`, `save_voice`, `voices`, `subscription`; errores como `TTSError`. |
 | `stt.py` | `transcribe(audio, cfg, filename)` (Scribe, multipart), `clean(text)` (una línea sin etiquetas de sonido; `""` si no hay palabras), `multipart(fields, files)`. |
-| `listen.py` | `Listener(cfg, desk, …).dictate()`: un dictado completo; `run()` los encadena; `serve(cfg, key)` es `escucha`; `running()` → pid de la escucha activa. |
-| `mic.py` | Solo Windows, con `ctypes`: `Desk(key)` (tecla como hotkey, ventana activa, `type_text`, `copy`, `beep`), `Recorder` (MCI, WAV 16 kHz mono), `vk_code`, `key_events`. |
+| `listen.py` | `Listener(cfg, desk, transcribe, stream, hush, acknowledge, …).dictate()`: un dictado completo; `run()` los encadena; `serve(cfg, key)` es `escucha`; `running()` → pid de la escucha activa. |
+| `realtime.py` | `Stream(cfg)`: `feed(pcm)`, `finish(timeout)` → texto, `cancel()`; `url(cfg)`; `WebSocket` mínimo; `encode_frame` / `read_frame`. |
+| `mic.py` | Solo Windows, con `ctypes`: `Desk(key)` (tecla por gancho de teclado de bajo nivel, o hotkey si no se puede; ventana activa, `type_text`, `copy`, `beep`), `KeyWatcher`, `Recorder` (waveIn, 16 kHz mono en trozos de 100 ms, `start(on_chunk)`, `stop(path)` → WAV), `vk_code`, `key_events`. |
+| `companion.py` | `accompany(cfg, session, transcript)`; `Companion.run()`: lee el transcript y habla con pausas crecientes (`gap(n)`), tono de interjección según la espera (`tone(n)`); `turn_done(session)`. |
 | `config.py` | `load()`, `save_voice_id(id)`, `set_muted(bool)`, `STATE_DIR`, `ROOT`, `DEFAULTS`. |
 
 ## Archivos de estado (`~/.talktome`)
@@ -176,6 +188,9 @@ Variables de entorno:
 | `design/voz-N.mp3` | `cli design` | Candidatas de Voice Design. |
 | `listen.pid` | `listen.serve` | Escucha activa (evita dos que escriban todo dos veces). |
 | `dictado.wav` | `listen` / `cli oye` | Último dictado, para revisarlo con `oye dictado.wav`. |
+| `dictated.json` | `hooks.mark_dictated` | Texto y hora del último dictado; el hook `prompt` lo consume. |
+| `sessions/<id>/prompt-at` | hook `prompt` | Hora del último prompt, para medir el turno de Claude. |
+| `sessions/<id>/turn-done` | hook `stop` | El turno terminó: el acompañante se calla. |
 | `sessions/<id>/project` | `player.remember_project` | Nombre hablado del proyecto. |
 | `sessions/<id>/worker.pid` | `player.claim` | Worker activo de esa sesión. |
 | `sessions/<id>/last-reply.txt` | `player` | Texto de la última respuesta dicha. |

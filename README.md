@@ -98,20 +98,33 @@ Un detalle largo puede ocupar unos 2.500 caracteres de ElevenLabs (unos tres min
 python talktome.py escucha     # déjalo corriendo en su propia consola
 ```
 
-Mantén **F9** mientras hablas y suéltala: Rachel se calla al instante, suena un bip corto, y al soltar la tecla tus palabras se escriben en la terminal que tenías al frente y se envían solas, como si las hubieras tecleado.
+Mantén **F9** mientras hablas y suéltala: suena un bip corto y Rachel se calla al instante. Al soltar la tecla, tus palabras se escriben en la terminal que tenías al frente y se envían solas, como si las hubieras tecleado.
 
 ```
- mantienes F9    ─► Rachel se calla y graba            (en tu PC)
- sueltas F9      ─► audio a ElevenLabs Scribe ─► texto (ElevenLabs, voz → texto)
-                 ─► texto + Enter en la terminal       (llega a Claude como si lo teclearas)
- Claude responde ─► Rachel lo dice                     (ElevenLabs, texto → voz, como siempre)
+ mantienes F9    ─► graba al instante y Rachel se calla      (en tu PC)
+ mientras hablas ─► el audio ya va llegando a Scribe         (ElevenLabs, voz → texto, en tiempo real)
+ sueltas F9      ─► texto + Enter en la terminal             (llega a Claude como si lo teclearas)
+                 ─► "Entendido, señor."                      (de inmediato, desde la caché)
+ Claude trabaja  ─► "Mmm, a ver..." · "Corriendo las pruebas..."
+ Claude responde ─► Rachel lo dice                           (ElevenLabs, texto → voz, como siempre)
 ```
+
+**Mientras Claude piensa, Rachel no se queda muda.** En los turnos que empiezas por voz:
+
+- **Acuse inmediato** al soltar la tecla: "Entendido, señor.", "Mmm, buena pregunta.", "Me pongo en eso."
+- **Interjecciones**: los sonidos cortos de alguien hilando ideas ("Mmm...", "A ver, a ver...", "Déjeme hilar esto..."). Con `eleven_v3` además suspira y murmura de verdad.
+- **Progreso**: qué está haciendo Claude, leído de las herramientas que usa ("Revisando el código...", "Corriendo las pruebas...", "Mandé a un replicante a investigar.").
+- **Con mesura**: la primera a los 5 segundos, y cada vez más espaciadas (hasta 30 s). Nunca habla encima de nadie y se calla en cuanto llega la respuesta. No frena a Claude, porque solo lee el transcript. El análisis y el estilo siguen siendo de Claude: esto es solo compañía.
+- **Sin costo extra**: son frases cortas que después de la primera vez salen de la caché. `"narrate_progress": "always"` las activa también cuando escribes, y `"off"` las apaga; `"voice_ack": false` quita el acuse.
 
 - A Claude solo le llega texto, nunca tu audio. "Repite" y "detalle" dichos en voz alta funcionan igual que escritos, y **"calla"** o "silencio" solo la callan, sin gastar un turno de Claude.
 - Si cambias de ventana mientras transcribe, el texto no se escribe en otra aplicación: queda en el portapapeles (bip grave).
+- Una pulsación demasiado corta suena con un bip medio: no se envía nada.
+- Si la transcripción en tiempo real falla (red, clave, proxy), el dictado usa Scribe normal sin que hagas nada; `talktome.log` lo registra. `"stt_realtime": false` la apaga.
 - Otra tecla: `--tecla F8` o `"listen_key"` en la config (F1–F24, `Pause`, `ScrollLock`, `RightCtrl`, `RightAlt`).
 - Para que Scribe acierte nombres propios y jerga: `"stt_keyterms": ["RockAvionics", "RocketYeah", "Rachel"]`.
 - Scribe cobra por minuto de audio, aparte de los caracteres de voz; un dictado corto cuesta poco. `python talktome.py oye` transcribe sin enviar nada, para probar, y `oye` con el archivo `~/.talktome/dictado.wav` revisa el último dictado.
+- **Tiempos**: `talktome.log` anota cuánto tardó cada tramo: la transcripción después de soltar la tecla, el turno de Claude y cuánto tardó Rachel en empezar a hablar.
 - Si la terminal corre como administrador, `escucha` también debe hacerlo: Windows no deja escribir en una ventana con más privilegios.
 
 ## Varias terminales, varios proyectos
@@ -169,6 +182,9 @@ Todas caben en la caché: cada frase gasta caracteres de ElevenLabs solo la prim
 | `listen_key` | `"F9"` | Tecla del dictado |
 | `stt_model` | `"scribe_v2"` | Modelo de Speech-to-Text de ElevenLabs |
 | `stt_keyterms` | `[]` | Palabras que Scribe debe esperar |
+| `stt_realtime` | `true` | Transcribir mientras hablas (Scribe v2 Realtime) |
+| `voice_ack` | `true` | "Entendido, señor." al enviar un dictado |
+| `narrate_progress` | `"voice"` | Interjecciones y progreso: `voice` (turnos por voz), `always` u `off` |
 
 | Modelo | Cuándo usarlo |
 |---|---|
@@ -207,7 +223,7 @@ La red de seguridad (resumen generado cuando una respuesta no trae el suyo) usa 
 
 - **Fase 1 — Rachel habla** ✅ (este repo): voz latina diseñada a medida, estilo Rachel, resumen hablado de cada respuesta con la pregunta pendiente primero, red de seguridad, saludos, avisos que esperan su turno, interrupción al escribir, "repite" y caché.
 - **Fase 2 — Rachel escucha** 🚧: dictado por voz hacia Claude Code.
-  - **2a — Push-to-talk** (en desarrollo): mantener F9, hablar, soltar; Scribe transcribe y se envía solo. "Calla" la silencia sin gastar turno.
+  - **2a — Push-to-talk** (en desarrollo): mantener F9, hablar, soltar; Scribe transcribe en tiempo real y se envía solo. Acuse inmediato, interjecciones y progreso mientras Claude trabaja. "Calla" la silencia sin gastar turno.
   - **2b — Comandos y permisos por voz**: responder "sí" o "no" a los permisos, arrancar la escucha junto con Claude Code.
   - **2c — Palabra de activación "Rachel"**: escucha continua con un detector local.
 - **Fase 3 — Conversación fluida**: modo manos libres de ida y vuelta (voz → Claude Code → voz) con turnos, interrupciones naturales y resumen hablado del progreso de tareas largas.
@@ -223,4 +239,4 @@ Documentación técnica, con diagramas:
 python -m unittest -v      # pruebas (sin red ni audio)
 ```
 
-Estructura: `voice/speakable.py` (markdown → habla, detección del resumen y de preguntas pendientes), `transcript.py` (respuesta final), `summarizer.py` (red de seguridad con `claude -p`), `tts.py` (ElevenLabs y Voice Design), `player.py` (audio, segundo plano, turnos entre sesiones, interrupción, repetir), `projects.py` (de qué proyecto habla cada sesión), `hooks.py` (eventos de Claude Code), `stt.py` (Scribe: voz → texto), `listen.py` (dictado con una tecla), `mic.py` (tecla, micrófono y teclado de Windows), `persona.py` (qué frase dice Rachel), `lines.py` (banco de frases), `deck.py` (mazos barajados, escalada y frases inventadas), `cli.py` (comandos). `tests/` incluye respuestas reales de RockAvionics como casos de prueba. Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.
+Estructura: `voice/speakable.py` (markdown → habla, detección del resumen y de preguntas pendientes), `transcript.py` (respuesta final), `summarizer.py` (red de seguridad con `claude -p`), `tts.py` (ElevenLabs y Voice Design), `player.py` (audio, segundo plano, turnos entre sesiones, interrupción, repetir), `projects.py` (de qué proyecto habla cada sesión), `hooks.py` (eventos de Claude Code), `stt.py` (Scribe: voz → texto), `realtime.py` (Scribe en tiempo real por WebSocket), `listen.py` (dictado con una tecla), `mic.py` (tecla, micrófono y teclado de Windows), `companion.py` (compañía mientras Claude trabaja), `persona.py` (qué frase dice Rachel), `lines.py` (banco de frases), `deck.py` (mazos barajados, escalada y frases inventadas), `cli.py` (comandos). `tests/` incluye respuestas reales de RockAvionics como casos de prueba. Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.

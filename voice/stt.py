@@ -1,7 +1,9 @@
 """ElevenLabs speech-to-text (Scribe): what the user said, as text (stdlib only)."""
+import io
 import json
 import re
 import uuid
+import wave
 
 from .tts import TTSError, _request
 
@@ -40,6 +42,17 @@ def transcribe(audio, cfg, filename="dictado.wav"):
         return json.load(resp).get("text", "")
 
 
+def wav_bytes(pcm, rate=16000):
+    """16-bit mono PCM wrapped as a WAV file."""
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(pcm)
+    return buf.getvalue()
+
+
 def clean(text):
     """One line of plain words, ready to type as a prompt; "" if nothing was said."""
     text = AUDIO_EVENT.sub(" ", text or "")
@@ -47,4 +60,4 @@ def clean(text):
     return text if re.search(r"\w", text) else ""
 
 
-__all__ = ["TTSError", "clean", "multipart", "transcribe"]
+__all__ = ["TTSError", "clean", "multipart", "transcribe", "wav_bytes"]

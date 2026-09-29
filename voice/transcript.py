@@ -1,5 +1,6 @@
 """Read Claude Code's session transcript (JSONL) to find the final reply."""
 import json
+import os
 
 
 def _blocks(entry):
@@ -41,3 +42,37 @@ def final_reply(path):
         if stop:
             break
     return "\n\n".join(reversed(parts)).strip()
+
+
+def tool_calls(path, offset=0):
+    """Tool calls written to the transcript since byte `offset`.
+
+    Returns ([(tool name, input), ...], new offset). A line still being
+    written is left for the next call.
+    """
+    try:
+        with open(path, "rb") as f:
+            f.seek(offset)
+            data = f.read()
+    except OSError:
+        return [], offset
+    end = data.rfind(b"\n") + 1
+    calls = []
+    for line in data[:end].splitlines():
+        try:
+            entry = json.loads(line)
+        except ValueError:
+            continue
+        if entry.get("type") != "assistant" or entry.get("isSidechain"):
+            continue
+        for block in _blocks(entry):
+            if block.get("type") == "tool_use":
+                calls.append((block.get("name", ""), block.get("input") or {}))
+    return calls, offset + end
+
+
+def size(path):
+    try:
+        return os.path.getsize(path)
+    except (OSError, TypeError):
+        return 0

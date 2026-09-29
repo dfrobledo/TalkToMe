@@ -55,6 +55,15 @@ DEFAULTS = {
     # ElevenLabs Scribe; keyterms: words it should expect (names, jargon).
     "stt_model": "scribe_v2",
     "stt_keyterms": [],
+    # Transcribe while you speak (Scribe v2 Realtime); batch Scribe if it fails.
+    "stt_realtime": True,
+    "stt_realtime_model": "scribe_v2_realtime",
+    "stt_realtime_timeout": 5,
+    # "Entendido, señor." the moment a dictation is sent.
+    "voice_ack": True,
+    # Company while Claude works (thinking sounds, what it is doing):
+    # "voice" for turns started by dictation, "always", or "off".
+    "narrate_progress": "voice",
     "cache_max_chars": 160,
     "player": "auto",
 }

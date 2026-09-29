@@ -118,6 +118,10 @@ En verde, los módulos **puros**: sin red, audio ni estado global, y por eso los
 | `player.py` | Reproduce audio, lanza workers, gestiona el turno de voz entre sesiones, la interrupción y la memoria de cada sesión. |
 | `tts.py` | Cliente de ElevenLabs: streaming, WAV, caché, Voice Design, voces y cuota. |
 | `config.py` | Valores por defecto + `talktome.config.json` + `.env` + variables de entorno. |
+| `listen.py` | Dictado (`escucha`): tecla, grabación, transcripción y escritura en la terminal (sección 14). |
+| `mic.py` | Windows con `ctypes`: gancho de teclado, micrófono `waveIn`, `SendInput`, portapapeles. |
+| `stt.py` · `realtime.py` | Scribe por lotes (multipart) y en tiempo real (WebSocket propio). |
+| `companion.py` | Interjecciones y progreso mientras Claude trabaja en un turno dictado. |
 
 ## 4. Del hook al altavoz: una respuesta
 
@@ -434,7 +438,8 @@ python -m unittest -v   # sin red ni audio
 | `tests/test_speech.py` | Limpieza de markdown, resumen hablado, `compose_reply`, "repite", "detalle", turnos, transcript. |
 | `tests/test_lines.py` | Mazos, escalada, hora del día, fechas especiales, frases inventadas. |
 | `tests/test_sessions.py` | Aislamiento por sesión, turno atómico, interrupción por terminal, distintivos, proyectos. |
-| `tests/test_listen.py` | Dictado con un escritorio simulado, "calla", petición a Scribe, limpieza, teclas y estructuras de Windows. |
+| `tests/test_listen.py` | Dictado con un escritorio simulado, tiempo real y respaldo por lotes, WebSocket, "calla", petición a Scribe, limpieza, teclas y estructuras de Windows. |
+| `tests/test_companion.py` | Tipos de actividad, frases, lectura incremental del transcript, pausas del acompañante, detección del turno por voz, tiempos. |
 
 ## 14. Dictado: Rachel escucha
 
@@ -444,18 +449,29 @@ python -m unittest -v   # sin red ni audio
 sequenceDiagram
     participant U as Usted
     participant L as escucha (listen.py)
-    participant EL as ElevenLabs Scribe
+    participant EL as Scribe Realtime
     participant T as Terminal de Claude Code
-    U->>L: mantiene F9
-    L->>L: recuerda la ventana activa · player.stop() · empieza a grabar (MCI) · bip
-    U->>L: habla y suelta F9
-    L->>EL: WAV 16 kHz (multipart, language_code es)
-    EL-->>L: texto
+    participant C as Acompañante (companion.py)
+    U->>L: mantiene F9 (gancho de teclado)
+    L->>L: recuerda la ventana · graba (waveIn) · bip · calla a Rachel en paralelo
+    L->>EL: abre el WebSocket mientras ya graba
+    loop mientras habla
+        L->>EL: PCM 16 kHz cada 100 ms
+    end
+    U->>L: suelta F9
+    L->>EL: commit
+    EL-->>L: committed_transcript (si falla: Scribe por lotes)
     alt "calla", "silencio"…
         L->>L: nada más: ya se calló al presionar
     else la ventana sigue al frente
+        L->>L: anota el dictado (dictated.json)
         L->>T: SendInput Unicode + Enter
-        T->>T: hook UserPromptSubmit (repite / detalle / prompt normal)
+        L->>U: "Entendido, señor." (worker, caché)
+        T->>C: hook prompt: turno por voz → _acompana
+        loop hasta el hook Stop (turn-done)
+            C->>C: lee herramientas nuevas del transcript
+            C->>U: "Mmm, a ver..." · "Corriendo las pruebas..." (pausas crecientes)
+        end
     else la ventana cambió
         L->>L: texto al portapapeles + bip grave
     end
@@ -463,9 +479,28 @@ sequenceDiagram
 
 Decisiones:
 
-- **Sin dependencias**: la tecla (`RegisterHotKey` + `GetAsyncKeyState`), el micrófono (MCI de `winmm`) y el teclado (`SendInput` con `KEYEVENTF_UNICODE`) son llamadas a Windows con `ctypes`. Por eso el dictado es solo para Windows por ahora.
-- **La tecla como hotkey**: así no le llega a la terminal (F9 escribiría una secuencia de escape en el prompt). Si otro programa ya la tiene, se sigue detectando pero también le llega a la ventana, y `escucha` lo avisa.
+- **Sin dependencias**: la tecla (gancho `WH_KEYBOARD_LL`), el micrófono (`waveIn` de `winmm`), el teclado (`SendInput` con `KEYEVENTF_UNICODE`) y el WebSocket de Scribe (`socket` + `ssl`) usan solo `ctypes` y la biblioteca estándar. Por eso el dictado es solo para Windows por ahora.
+- **La tecla por gancho de teclado**: Windows avisa exactamente cuándo baja y cuándo sube la tecla, y el gancho se la traga, así que no llega a la terminal (F9 escribiría una secuencia de escape en el prompt). Una pulsación más corta que el sondeo igual cuenta. Si el gancho no se puede instalar, se usa `RegisterHotKey` + `GetAsyncKeyState`.
+- **Primero el micrófono**: al presionar se abre `waveIn` y suena el bip; callar a Rachel (`taskkill`, lento en Windows) va en un hilo aparte para no comerse las primeras palabras.
+- **Transcribir mientras habla**: el WebSocket se conecta en paralelo; el audio grabado mientras tanto se acumula y sale de una vez. Al soltar solo falta el `commit`. Cualquier error del tiempo real (conexión, clave, tiempo de espera) cae a Scribe por lotes con el WAV completo.
 - **El Enter aparte**: el texto y el Enter van en dos ráfagas separadas por 150 ms, para que la terminal no tome el Enter como parte de un pegado.
 - **La ventana de origen**: se escribe en la ventana que estaba al frente al presionar la tecla. Si al terminar de transcribir ya no lo está y Windows no deja traerla de vuelta, el texto queda en el portapapeles en vez de ir a parar a otra aplicación.
 - **"Calla" no llega a Claude**: se resuelve en local. Escrito a mano, el hook `prompt` también lo bloquea.
-- **Probado sin Windows**: `Listener` recibe el escritorio (`mic.Desk`) y la transcripción como dependencias; las pruebas usan un escritorio simulado con reloj falso.
+- **Probado sin Windows**: `Listener` recibe el escritorio (`mic.Desk`), la transcripción y el stream como dependencias; las pruebas usan un escritorio simulado con reloj falso y un servidor de Scribe falso.
+
+### Compañía mientras Claude trabaja
+
+Un silencio largo después de hablar se siente como si nadie hubiera oído. Por eso, en los turnos que empiezan por voz:
+
+1. **Acuse**: la escucha lanza un worker con una frase de `lines.ACKS` apenas escribe el prompt.
+2. **Acompañante**: el hook `prompt` reconoce el dictado (`was_dictated`) y lanza `_acompana`, que reclama la sesión como su worker. Cada medio segundo lee las herramientas nuevas del transcript (`transcript.tool_calls`) y, cuando pasó la pausa que toca, dice algo:
+   - si Claude empezó otro tipo de trabajo (`persona.activity`), una frase de `lines.PROGRESS`;
+   - si no, una interjección de `lines.THINKING`, cuyo tono sube con la espera: sonidos, luego cavilaciones, luego "sigo aquí". Con `eleven_v3` se suman las de `THINKING_V3`, con etiquetas como `[sighs]`.
+3. **Pausas crecientes**: 5 s, luego ×1,35 cada vez, con tope de 30 s. Si alguien más está hablando, calla.
+4. **Fin**: el hook `Stop` escribe `turn-done` y el worker de la respuesta reclama la sesión, lo que mata al acompañante. Si el acompañante llega tarde y el turno ya terminó, no reclama nada, para no cortar la respuesta.
+
+Nada de esto toca a Claude: solo lee el transcript, así que no agrega latencia ni cambia el análisis.
+
+### Tiempos
+
+`talktome.log` anota una línea por dictado ("2.1 s de voz → 48 car., texto 0.3 s después de soltar (en tiempo real)") y otra por respuesta ("tiempos: Claude 23.4 s · voz 1.1 s después"), a partir de `prompt-at`, la hora del `Stop` y `player.first_sound`.

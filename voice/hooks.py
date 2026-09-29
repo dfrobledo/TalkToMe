@@ -10,7 +10,7 @@ import re
 import time
 import unicodedata
 
-from . import persona, player, projects, speakable, summarizer, transcript
+from . import companion, persona, player, projects, speakable, summarizer, transcript
 from .config import STATE_DIR
 
 
@@ -115,6 +115,32 @@ def is_detail(prompt):
     return _command(prompt) in DETAIL_WORDS
 
 
+# What `talktome escucha` just typed: its prompt is a turn started by voice.
+DICTATED = STATE_DIR / "dictated.json"
+
+
+def mark_dictated(text):
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    DICTATED.write_text(json.dumps({"text": text, "at": time.time()}, ensure_ascii=False), encoding="utf-8")
+
+
+def was_dictated(prompt, within=30):
+    """Did this prompt come from the dictation, just now? Asking forgets it."""
+    try:
+        mark = json.loads(DICTATED.read_text(encoding="utf-8"))
+        DICTATED.unlink()
+    except (OSError, ValueError):
+        return False
+    return time.time() - mark.get("at", 0) < within and _command(mark.get("text")) == _command(prompt)
+
+
+def narrates(cfg, voice):
+    """Keep the user company during this turn? `narrate_progress`: voice, always or off."""
+    mode = cfg.get("narrate_progress", "voice")
+    ready = cfg.get("enabled", True) and not cfg.get("muted") and cfg.get("api_key")
+    return bool(ready) and (mode == "always" or (mode == "voice" and voice))
+
+
 def handle(event, payload, cfg):
     """Entry point for `talktome.py hook <event>`; never blocks on audio.
 
@@ -143,7 +169,19 @@ def handle(event, payload, cfg):
             return {"decision": "block", "reason": "Rachel repite su última respuesta."}
         if cfg.get("interrupt_on_prompt", True):
             player.stop(session)
+        folder = player.session_dir(session)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "prompt-at").write_text(str(time.time()), encoding="utf-8")
+        companion.turn_done(session).unlink(missing_ok=True)
+        if narrates(cfg, was_dictated(prompt)) and payload.get("transcript_path"):
+            player.spawn("_acompana", session, payload["transcript_path"])
         return None
+    if event == "stop":
+        # The companion stops here; the reply takes over.
+        folder = player.session_dir(session)
+        folder.mkdir(parents=True, exist_ok=True)
+        companion.turn_done(session).write_text(str(time.time()), encoding="utf-8")
+        payload = {**payload, "stop_at": time.time()}
     if not cfg.get("enabled", True):
         return
     if cfg.get("muted") or not cfg.get("api_key"):
@@ -226,13 +264,30 @@ def work(kind, payload_file, cfg):
         # If another project is talking, wait for it to finish instead of
         # cutting it off; the idle reminder does not wait at all.
         wait = 0 if payload.get("skip_if_busy") else 180 if payload.get("polite") else 300
+        player.first_sound = None
         if not player.speak(text, cfg, keep=kind == "reply", session=session, intro=intro, wait=wait):
             log(f"{'respuesta' if kind == 'reply' else 'aviso'} omitido: otra sesión ocupó la voz demasiado tiempo")
+        elif kind == "reply":
+            log(_timing(session, payload.get("stop_at"), player.first_sound))
     finally:
         player.release(session)
     if payload.get("invent"):
         added = persona.invent(cfg)
         log(f"frases nuevas de Rachel: {len(added)}" + "".join(f" | {line}" for line in added))
+
+
+def _timing(session, stop_at, first_sound):
+    """How long the turn took, from the prompt to Claude's last word to Rachel's first."""
+    parts = []
+    try:
+        prompt_at = float((player.session_dir(session) / "prompt-at").read_text())
+    except (OSError, ValueError):
+        prompt_at = None
+    if prompt_at and stop_at:
+        parts.append(f"Claude {stop_at - prompt_at:.1f} s")
+    if stop_at and first_sound:
+        parts.append(f"voz {first_sound - stop_at:.1f} s después")
+    return "tiempos: " + (" · ".join(parts) or "sin datos")
 
 
 def detail(cfg, session=None):

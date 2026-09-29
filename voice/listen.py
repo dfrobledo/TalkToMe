@@ -1,17 +1,21 @@
 """Rachel listens: hold a key, speak, and it goes to Claude Code as a typed prompt.
 
-    hold the key ─► Rachel stops talking, the microphone records
-    release it   ─► Scribe (ElevenLabs) turns the audio into text
+    hold the key ─► the microphone records at once; Rachel stops talking
+                 ─► audio streams to Scribe Realtime while you speak
+    release it   ─► the text is ready a moment later (batch Scribe if not)
                  ─► typed into the window that had the focus, plus Enter
+                 ─► "Entendido, señor.": Rachel heard you
 
 The prompt reaches Claude Code exactly as if typed, so its hooks apply:
-"repite" and "detalle" are handled by Rachel without spending a turn.
+"repite" and "detalle" are handled by Rachel without spending a turn, and
+a dictated prompt gets company while Claude works (companion.py).
 Only "calla" is handled here: pressing the key already silenced her.
 """
 import os
+import threading
 import time
 
-from . import hooks, mic, player, stt
+from . import hooks, mic, persona, player, realtime, stt
 from .config import STATE_DIR
 from .tts import TTSError
 
@@ -21,11 +25,28 @@ LAST_AUDIO = STATE_DIR / "dictado.wav"
 POLL = 0.02
 
 
+def _hush():
+    # taskkill takes a moment on Windows: never let it delay the microphone.
+    threading.Thread(target=player.stop, daemon=True).start()
+
+
+def _acknowledge(cfg):
+    """Rachel says she heard, from a worker of her own (a new dictation can cut it off)."""
+    if cfg.get("voice_ack", True) and cfg.get("enabled", True) and not cfg.get("muted") and cfg.get("api_key"):
+        hooks._enqueue("say", {"text": persona.ack(cfg["honorific"]), "callsign": False})
+
+
+def _stream(cfg):
+    return realtime.Stream(cfg) if cfg.get("stt_realtime", True) else None
+
+
 class Listener:
     """One hold-to-talk dictation after another. `desk` is the desktop (mic.Desk)."""
 
-    def __init__(self, cfg, desk, transcribe=stt.transcribe, clock=time.monotonic, sleep=time.sleep, out=print):
-        self.cfg, self.desk, self.transcribe = cfg, desk, transcribe
+    def __init__(self, cfg, desk, transcribe=stt.transcribe, stream=_stream, hush=_hush, acknowledge=_acknowledge,
+                 clock=time.monotonic, sleep=time.sleep, out=print):
+        self.cfg, self.desk, self.transcribe, self.stream = cfg, desk, transcribe, stream
+        self.hush, self.acknowledge = hush, acknowledge
         self.clock, self.sleep, self.out = clock, sleep, out
 
     def run(self):
@@ -39,34 +60,54 @@ class Listener:
     def dictate(self):
         """Record while the key is held, then deliver what was said. Returns the text typed."""
         window = self.desk.foreground()
-        player.stop()  # she has the floor no more
         recorder = self.desk.recorder()
+        stream = self.stream(self.cfg)
         try:
-            recorder.start()
+            recorder.start(on_chunk=stream.feed if stream else None)
         except mic.MicError as e:
+            if stream:
+                stream.cancel()
             return self._fail(str(e))
         self.desk.beep("start")
+        self.hush()
         started = self.clock()
         limit = self.cfg.get("listen_max_seconds", 120)
         while self.desk.key_down() and self.clock() - started < limit:
             self.sleep(POLL)
         seconds = self.clock() - started
         if seconds < self.cfg.get("listen_min_seconds", 0.4):
-            recorder.cancel()  # a tap, not a dictation
+            recorder.cancel()  # a tap, not a dictation: a short beep says so
+            if stream:
+                stream.cancel()
+            self.desk.beep("short")
             return ""
         try:
             audio = recorder.stop(LAST_AUDIO)
-            began = self.clock()
-            text = stt.clean(self.transcribe(audio, self.cfg))
-        except (mic.MicError, TTSError, OSError) as e:
+        except (mic.MicError, OSError) as e:
+            if stream:
+                stream.cancel()
             return self._fail(str(e))
-        took = self.clock() - began
+        released = self.clock()
+        text, how = None, "por lotes"
+        if stream:
+            try:
+                text, how = stream.finish(self.cfg.get("stt_realtime_timeout", 5)), "en tiempo real"
+            except TTSError as e:
+                hooks.log(f"dictado: {e}; paso a Scribe por lotes")
+        if text is None:
+            try:
+                text = self.transcribe(audio, self.cfg)
+            except (TTSError, OSError) as e:
+                return self._fail(str(e))
+        text = stt.clean(text)
+        took = self.clock() - released
         if not text:
             return self._fail(f"dictado de {seconds:.1f} s sin palabras")
         if hooks.is_stop(text):
             hooks.log(f"dictado: «{text}» → Rachel calla")
             self.out(f"» {text}  (Rachel calla)")
             return ""
+        hooks.mark_dictated(text)
         try:
             typed = self.desk.type_text(text, window)
         except mic.MicError as e:
@@ -78,7 +119,8 @@ class Listener:
             hooks.log(f"dictado: la ventana cambió, texto en el portapapeles ({len(text)} car.)")
             self.out(f"» {text}  (quedó en el portapapeles)")
             return ""
-        hooks.log(f"dictado: {seconds:.1f} s de voz → {len(text)} car. en {took:.1f} s")
+        self.acknowledge(self.cfg)
+        hooks.log(f"dictado: {seconds:.1f} s de voz → {len(text)} car., texto {took:.1f} s después de soltar ({how})")
         self.out(f"» {text}")
         return text
 
