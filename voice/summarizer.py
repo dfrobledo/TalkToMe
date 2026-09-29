@@ -14,8 +14,11 @@ from .player import NO_WINDOW
 SYSTEM = "Redactas resúmenes hablados en español latinoamericano. Sigue exactamente las instrucciones del mensaje."
 # Newer flags keep the run lean and out of the user's history; older CLIs
 # that reject them are retried without.
+# No hooks at all in the summarizer's session: neither ours (TALKTOME_DISABLE
+# also guards those) nor any other the user has, which only add delay.
 LEAN_FLAGS = ["--effort", "low", "--tools", "", "--no-session-persistence",
-              "--disable-slash-commands", "--system-prompt", SYSTEM]
+              "--disable-slash-commands", "--settings", '{"disableAllHooks": true}',
+              "--system-prompt", SYSTEM]
 
 INSTRUCTIONS = """Eres Rachel, la asistente de voz del usuario, a quien llamas "{h}". Abajo está la última respuesta que su asistente de programación le dejó en pantalla. Escribe el resumen hablado que Rachel le dirá en voz alta, para que quede enterado de lo importante sin mirar la pantalla.
 
@@ -42,8 +45,32 @@ def _log(message):
         f.write(f"resumidor: {message}\n")
 
 
-def summarize(reply, cfg):
-    """Spoken summary of `reply`, or "" if Claude could not be reached."""
+NARRATION = """Eres Rachel, la asistente de voz del usuario, a quien llamas "{h}". Abajo está la última respuesta que su asistente de programación le dejó en pantalla. El usuario ya escuchó este resumen:
+
+"{spoken}"
+
+Ahora te pide el detalle. Escribe la lectura en voz alta del RESTO de la respuesta, para que la entienda completa sin mirar la pantalla.
+
+Reglas:
+1. No resumas: conserva cada decisión, dato, paso, opción, riesgo y pregunta, en el orden de la respuesta.
+2. No repitas lo que ya dijo el resumen; si algo ya se dijo, pasa directo a lo nuevo.
+3. Tablas: dilas como frases ("con ciento veinticinco kilohercios, cada trama ocupa ochenta y dos milisegundos..."). Código: di en una frase qué hace, nunca lo leas. Listas: "primero..., segundo...".
+4. Pines, rutas, puertos, nombres de archivo e identificadores: nómbralos por lo que son; di el valor solo si el usuario lo necesita para actuar ("el puerto COM siete").
+5. Números en palabras y copiados tal cual de la respuesta, sin combinarlos con condiciones que no son suyas.
+6. Lo que sea hipótesis, dilo en palabras ("en teoría, hasta que lo midamos").
+7. Habla en primera persona, como quien escribió la respuesta: "le recuerdo", "propongo", "necesito". Nunca "le recuerda", "el asistente dice" ni "la respuesta explica".
+8. Español latinoamericano neutro, trato de usted, pretérito simple; tono de Rachel, sereno y claro, sin bromas que quiten espacio.
+9. Prosa para el oído, en párrafos cortos, máximo {max_chars} caracteres: si no cabe todo, abrevia lo menos importante, nunca el final ni las preguntas. Sin markdown, listas, comillas ni emojis.
+
+Responde SOLO con esa lectura.
+
+--- RESPUESTA EN PANTALLA ---
+{reply}
+--- FIN ---"""
+
+
+def _ask_claude(prompt, cfg):
+    """Run `prompt` through headless Claude Code; "" if it could not answer."""
     if cfg.get("summarizer", "claude") != "claude":
         return ""
     base = list(cfg.get("summarizer_command") or ["claude", "-p", "--model", "sonnet"])
@@ -51,9 +78,6 @@ def summarize(reply, cfg):
     if not exe:
         _log(f"no encuentro '{base[0]}' en el PATH")
         return ""
-    prompt = INSTRUCTIONS.format(
-        h=cfg["honorific"], max_chars=cfg.get("summary_max_chars", 650), reply=reply[:20000]
-    )
     # Our own hooks must not fire inside the summarizer's session.
     env = {**os.environ, "TALKTOME_DISABLE": "1"}
     # A neutral folder: no project CLAUDE.md steering the output format.
@@ -74,3 +98,20 @@ def summarize(reply, cfg):
             return done.stdout.strip()
         _log(f"código {done.returncode}: {(done.stderr or done.stdout).strip()[:300]}")
     return ""
+
+
+def summarize(reply, cfg):
+    """Spoken summary of `reply`, or "" if Claude could not be reached."""
+    return _ask_claude(INSTRUCTIONS.format(
+        h=cfg["honorific"], max_chars=cfg.get("summary_max_chars", 650), reply=reply[:20000]
+    ), cfg)
+
+
+def narrate(reply, spoken, cfg):
+    """Everything in `reply` beyond the summary already `spoken`, for the ear."""
+    return _ask_claude(NARRATION.format(
+        h=cfg["honorific"], spoken=spoken or "(ninguno)",
+        # Ask for less than the hard cap: the model overshoots, and the cut
+        # would fall on the end, where the questions usually are.
+        max_chars=int(cfg.get("detail_max_chars", 2500) * 0.8), reply=reply[:20000],
+    ), cfg)

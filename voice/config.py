@@ -30,6 +30,8 @@ DEFAULTS = {
     "max_chars": 450,
     # The spoken summary covers the whole reply, so it gets more room.
     "summary_max_chars": 650,
+    # "detalle": the rest of the last reply, narrated on demand.
+    "detail_max_chars": 2500,
     # Layer 2: when a reply has no spoken summary, have Claude write one.
     # "claude" uses the Claude Code CLI on your plan; "off" disables it.
     "summarizer": "claude",

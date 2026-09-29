@@ -77,13 +77,31 @@ REPEAT_WORDS = {
 }
 
 
-def is_repeat(prompt):
-    """Is the whole prompt just asking Rachel to say her last reply again?"""
+DETAIL_WORDS = {
+    "detalle", "el detalle", "detalles", "los detalles", "mas detalle", "con detalle",
+    "dame el detalle", "dime el detalle", "leeme el detalle", "lee el detalle", "cuentame el detalle",
+    "leelo todo", "lee todo", "leemelo todo", "dimelo todo", "todo", "completo", "la respuesta completa",
+}
+LAST_REPLY_MD = STATE_DIR / "last-reply.md"
+
+
+def _command(prompt):
+    """The prompt reduced to bare words: no accents, punctuation, name or courtesy."""
     text = unicodedata.normalize("NFKD", (prompt or "").lower())
     text = "".join(c for c in text if not unicodedata.combining(c))
     text = re.sub(r"[^\w\s]", " ", text)
     text = re.sub(r"\b(rachel|por favor|porfa|porfavor)\b", " ", text)
-    return " ".join(text.split()) in REPEAT_WORDS
+    return " ".join(text.split())
+
+
+def is_repeat(prompt):
+    """Is the whole prompt just asking Rachel to say her last reply again?"""
+    return _command(prompt) in REPEAT_WORDS
+
+
+def is_detail(prompt):
+    """Is the whole prompt just asking Rachel for the rest of her last reply?"""
+    return _command(prompt) in DETAIL_WORDS
 
 
 def handle(event, payload, cfg):
@@ -91,8 +109,17 @@ def handle(event, payload, cfg):
 
     Returns a hook decision for Claude Code, if any, to print as JSON.
     """
+    # Set inside the summarizer's own Claude session: its prompt must not
+    # silence the worker that is waiting for that very summary.
+    if os.environ.get("TALKTOME_DISABLE"):
+        return None
     if event == "prompt":
-        if is_repeat(payload.get("prompt") or payload.get("prompt_text")):
+        prompt = payload.get("prompt") or payload.get("prompt_text")
+        if is_detail(prompt):
+            player.stop()
+            player.spawn("_detail")
+            return {"decision": "block", "reason": "Rachel le lee el detalle de su última respuesta."}
+        if is_repeat(prompt):
             player.stop()
             player.spawn("_repeat")
             # Blocked prompts never reach Claude: no turn, no tokens.
@@ -100,7 +127,7 @@ def handle(event, payload, cfg):
         if cfg.get("interrupt_on_prompt", True):
             player.stop()
         return None
-    if os.environ.get("TALKTOME_DISABLE") or not cfg.get("enabled", True):
+    if not cfg.get("enabled", True):
         return
     if cfg.get("muted") or not cfg.get("api_key"):
         return
@@ -128,17 +155,74 @@ def work(kind, payload_file, cfg):
             pass
     if payload.get("polite") and player.busy():
         if payload.get("skip_if_busy") or not player.wait_turn(timeout=180):
+            log("aviso omitido: Rachel estaba hablando")
             return
-    # Claim first: if the user types while a summary is being written, the
-    # prompt hook interrupts this worker before it says something stale.
+    reply = _reply_from(payload) if kind == "reply" else ""
+    if kind == "reply" and not reply.strip():
+        log("respuesta vacía: nada que decir")  # and nothing to interrupt for
+        return
+    if kind == "reply":
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        LAST_REPLY_MD.write_text(reply, encoding="utf-8")  # for "detalle"
+    # Claim before summarizing: if the user types while a summary is being
+    # written, the prompt hook interrupts this worker before it says
+    # something stale.
     player.claim()
     try:
         if kind == "say":
             text = payload["text"]
         else:
-            text = compose_reply(_reply_from(payload), cfg, summarize=summarizer.summarize)
+            text = compose_reply(reply, cfg, summarize=_logged(summarizer.summarize))
+            log(f"respuesta: {len(reply)} car. en pantalla → {len(text)} car. hablados")
         if not text:
             return
         player.speak(text, cfg, keep=kind == "reply")
     finally:
         player.release()
+
+
+def detail(cfg):
+    """Narrate the rest of the last reply, beyond the summary already heard."""
+    h = cfg["honorific"]
+    try:
+        reply = LAST_REPLY_MD.read_text(encoding="utf-8")
+    except OSError:
+        reply = ""
+    player.claim()
+    try:
+        if not reply.strip():
+            player.speak(persona.nothing_to_detail(h), cfg)
+            return
+        # Narrating takes a few seconds; say so instead of going quiet.
+        player.speak(persona.one_moment(h), cfg)
+        started = time.monotonic()
+        text = speakable.to_speech(summarizer.narrate(reply, player.last_spoken(), cfg)).replace("\n\n", " ")
+        if text:
+            log(f"detalle narrado en {time.monotonic() - started:.1f} s → {len(text)} car.")
+        else:
+            text = speakable.to_speech(reply).replace("\n\n", " ")
+            log("detalle: el narrador falló, leo la respuesta limpia")
+        text, _ = speakable.truncate(text, cfg.get("detail_max_chars", 2500))
+        player.speak(text, cfg)
+    finally:
+        player.release()
+
+
+def _logged(summarize):
+    def run(reply, cfg):
+        started = time.monotonic()
+        text = summarize(reply, cfg)
+        log(f"sin resumen propio → resumidor {'OK' if text else 'FALLÓ'} en {time.monotonic() - started:.1f} s")
+        return text
+
+    return run
+
+
+def log(message):
+    """One line per decision in ~/.talktome/talktome.log, to explain silences."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = STATE_DIR / "talktome.log"
+    if path.exists() and path.stat().st_size > 512_000:
+        path.replace(path.with_suffix(".log.old"))
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {message}\n")
