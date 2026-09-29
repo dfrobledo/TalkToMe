@@ -5,6 +5,7 @@ that talks to ElevenLabs is handed to a detached worker (`player.spawn`).
 """
 import json
 import os
+import random
 import re
 import time
 import unicodedata
@@ -138,7 +139,10 @@ def handle(event, payload, cfg):
         if line:
             # Notifications never cut a reply short: they wait their turn,
             # and the idle reminder is dropped if Rachel is already talking.
-            _enqueue("say", {"text": line, "polite": True, "skip_if_busy": persona.is_idle(payload)})
+            idle = persona.is_idle(payload)
+            # Now and then, after an idle reminder, Claude writes new ones.
+            invent = idle and random.random() < cfg.get("invent_chance", 0.2)
+            _enqueue("say", {"text": line, "polite": True, "skip_if_busy": idle, "invent": invent})
     elif event == "stop":
         _enqueue("reply", payload)
 
@@ -179,6 +183,9 @@ def work(kind, payload_file, cfg):
         player.speak(text, cfg, keep=kind == "reply")
     finally:
         player.release()
+    if payload.get("invent"):
+        added = persona.invent(cfg)
+        log(f"frases nuevas de Rachel: {len(added)}" + "".join(f" | {line}" for line in added))
 
 
 def detail(cfg):

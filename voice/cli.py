@@ -5,7 +5,7 @@ import json
 import sys
 import traceback
 
-from . import config, hooks, player, tts
+from . import config, deck, hooks, lines, persona, player, tts
 from .player import LOG_FILE
 
 SAMPLE = (
@@ -189,6 +189,20 @@ def cmd_mute(args, cfg):
     return 0
 
 
+def cmd_lines(args, cfg):
+    if args.inventa:
+        print("Pidiéndole frases nuevas a Claude...")
+        added = persona.invent(cfg)
+        print(f"{len(added)} nuevas." if added else "Claude no aportó ninguna frase utilizable.")
+    invented = deck.invented()
+    print(f"Banco: {len(lines.IDLE)} frases de espera, {len(lines.GREETINGS)} saludos, "
+          f"{len(lines.PERMISSION_TOOL) + len(lines.PERMISSION)} de permiso.")
+    print(f"Inventadas por Claude ({len(invented)}, se borran en {deck.STATE_FILE}):")
+    for line in invented:
+        print("  " + line.format(h=cfg["honorific"]))
+    return 0
+
+
 def cmd_stop(args, cfg):
     player.stop()
     return 0
@@ -220,6 +234,9 @@ def main(argv=None):
     sub.add_parser("voices", help="lista tus voces de ElevenLabs").set_defaults(fn=cmd_voices)
     sub.add_parser("quota", help="caracteres disponibles").set_defaults(fn=cmd_quota)
     sub.add_parser("doctor", help="verifica la instalación").set_defaults(fn=cmd_doctor)
+    p = sub.add_parser("frases", aliases=["lines"], help="frases de Rachel, incluidas las inventadas")
+    p.add_argument("--inventa", action="store_true", help="pedirle a Claude frases nuevas ahora")
+    p.set_defaults(fn=cmd_lines)
     sub.add_parser("stop", help="calla la frase en curso").set_defaults(fn=cmd_stop)
     sub.add_parser("mute", help="silencia a Rachel").set_defaults(fn=cmd_mute)
     sub.add_parser("unmute", help="reactiva la voz").set_defaults(fn=cmd_mute)

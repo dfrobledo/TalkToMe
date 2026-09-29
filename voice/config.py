@@ -35,6 +35,10 @@ DEFAULTS = {
     # Layer 2: when a reply has no spoken summary, have Claude write one.
     # "claude" uses the Claude Code CLI on your plan; "off" disables it.
     "summarizer": "claude",
+    # Chance that an idle reminder has Claude invent new ones afterwards
+    # (0 turns it off), and how many invented lines to keep.
+    "invent_chance": 0.2,
+    "invented_max": 60,
     "greet_on_start": True,
     "speak_notifications": True,
     "interrupt_on_prompt": True,
