@@ -5,7 +5,7 @@ import json
 import sys
 import traceback
 
-from . import config, deck, hooks, lines, persona, player, tts
+from . import config, deck, hooks, lines, persona, player, projects, tts
 from .player import LOG_FILE
 
 SAMPLE = (
@@ -69,10 +69,17 @@ def cmd_worker(args, cfg):
     return 0
 
 
+def _session(args, cfg):
+    """The Claude Code session a detached command runs for, and its project's config."""
+    session = getattr(args, "session", None) or None
+    return session, projects.identify(getattr(args, "cwd", None), cfg)[1]
+
+
 def cmd_repeat(args, cfg):
-    player.claim()
+    session, cfg = _session(args, cfg)
+    player.claim(session)
     try:
-        if not player.replay(cfg):
+        if not player.replay(cfg, session):
             print("Todavía no hay ninguna respuesta que repetir.")
     except Exception:
         if args.command == "_repeat":
@@ -80,13 +87,14 @@ def cmd_repeat(args, cfg):
         else:
             raise
     finally:
-        player.release()
+        player.release(session)
     return 0
 
 
 def cmd_detail(args, cfg):
+    session, cfg = _session(args, cfg)
     try:
-        hooks.detail(cfg)
+        hooks.detail(cfg, session)
     except Exception:
         if args.command == "_detail":
             _log_error()  # Detached: nobody is watching the console.
@@ -219,9 +227,15 @@ def main(argv=None):
     p.add_argument("payload")
     p.set_defaults(fn=cmd_worker)
     sub.add_parser("repite", aliases=["repeat"], help="repite la última respuesta").set_defaults(fn=cmd_repeat)
-    sub.add_parser("_repeat").set_defaults(fn=cmd_repeat)
+    p = sub.add_parser("_repeat")
+    p.add_argument("session", nargs="?")
+    p.add_argument("cwd", nargs="?")
+    p.set_defaults(fn=cmd_repeat)
     sub.add_parser("detalle", aliases=["detail"], help="narra el detalle de la última respuesta").set_defaults(fn=cmd_detail)
-    sub.add_parser("_detail").set_defaults(fn=cmd_detail)
+    p = sub.add_parser("_detail")
+    p.add_argument("session", nargs="?")
+    p.add_argument("cwd", nargs="?")
+    p.set_defaults(fn=cmd_detail)
     p = sub.add_parser("say", help="dice un texto (o una frase de prueba)")
     p.add_argument("text", nargs="*")
     p.set_defaults(fn=cmd_say)

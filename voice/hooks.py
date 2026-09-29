@@ -10,7 +10,7 @@ import re
 import time
 import unicodedata
 
-from . import persona, player, speakable, summarizer, transcript
+from . import persona, player, projects, speakable, summarizer, transcript
 from .config import STATE_DIR
 
 
@@ -83,7 +83,6 @@ DETAIL_WORDS = {
     "dame el detalle", "dime el detalle", "leeme el detalle", "lee el detalle", "cuentame el detalle",
     "leelo todo", "lee todo", "leemelo todo", "dimelo todo", "todo", "completo", "la respuesta completa",
 }
-LAST_REPLY_MD = STATE_DIR / "last-reply.md"
 
 
 def _command(prompt):
@@ -114,26 +113,34 @@ def handle(event, payload, cfg):
     # silence the worker that is waiting for that very summary.
     if os.environ.get("TALKTOME_DISABLE"):
         return None
+    # Each terminal is its own session: typing in one only silences what
+    # that one was saying, and "repite" repeats its own last reply.
+    session = payload.get("session_id") or ""
     if event == "prompt":
         prompt = payload.get("prompt") or payload.get("prompt_text")
         if is_detail(prompt):
-            player.stop()
-            player.spawn("_detail")
+            player.stop(session)
+            player.spawn("_detail", session, payload.get("cwd") or "")
             return {"decision": "block", "reason": "Rachel le lee el detalle de su última respuesta."}
         if is_repeat(prompt):
-            player.stop()
-            player.spawn("_repeat")
+            player.stop(session)
+            player.spawn("_repeat", session, payload.get("cwd") or "")
             # Blocked prompts never reach Claude: no turn, no tokens.
             return {"decision": "block", "reason": "Rachel repite su última respuesta."}
         if cfg.get("interrupt_on_prompt", True):
-            player.stop()
+            player.stop(session)
         return None
     if not cfg.get("enabled", True):
         return
     if cfg.get("muted") or not cfg.get("api_key"):
         return
+    where = {"session_id": session, "cwd": payload.get("cwd") or ""}
+    project, cfg = projects.identify(where["cwd"], cfg)
     if event == "session" and cfg.get("greet_on_start") and payload.get("source", "startup") == "startup":
-        _enqueue("say", {"text": persona.greeting(cfg["honorific"]), "polite": True})
+        named = project if announces(cfg) else ""
+        # The greeting already names the project: no callsign on top.
+        _enqueue("say", {"text": persona.greeting(cfg["honorific"], project=named), "polite": True,
+                         "callsign": False, **where})
     elif event == "notification" and cfg.get("speak_notifications"):
         line = persona.notification(payload, cfg["honorific"])
         if line:
@@ -142,9 +149,27 @@ def handle(event, payload, cfg):
             idle = persona.is_idle(payload)
             # Now and then, after an idle reminder, Claude writes new ones.
             invent = idle and random.random() < cfg.get("invent_chance", 0.2)
-            _enqueue("say", {"text": line, "polite": True, "skip_if_busy": idle, "invent": invent})
+            _enqueue("say", {"text": line, "polite": True, "skip_if_busy": idle, "invent": invent, **where})
     elif event == "stop":
         _enqueue("reply", payload)
+
+
+def announces(cfg):
+    return cfg.get("announce_project", "switch") in ("switch", "always")
+
+
+def _callsign(project, cfg):
+    """The `intro` for `player.speak`: name the project when the voice changes project."""
+    def intro(previous):
+        mode = cfg.get("announce_project", "switch")
+        if not project or not announces(cfg):
+            return ""
+        # Nothing heard before (or only a console command): no need to say where.
+        if mode == "always" or (previous and previous != project):
+            return persona.callsign(project, cfg["honorific"])
+        return ""
+
+    return intro
 
 
 def work(kind, payload_file, cfg):
@@ -157,6 +182,9 @@ def work(kind, payload_file, cfg):
             os.remove(payload_file)
         except OSError:
             pass
+    session = payload.get("session_id") or ""
+    project, cfg = projects.identify(payload.get("cwd"), cfg)
+    player.remember_project(session, project)
     if payload.get("polite") and player.busy():
         if payload.get("skip_if_busy") or not player.wait_turn(timeout=180):
             log("aviso omitido: Rachel estaba hablando")
@@ -166,53 +194,56 @@ def work(kind, payload_file, cfg):
         log("respuesta vacía: nada que decir")  # and nothing to interrupt for
         return
     if kind == "reply":
-        STATE_DIR.mkdir(parents=True, exist_ok=True)
-        LAST_REPLY_MD.write_text(reply, encoding="utf-8")  # for "detalle"
-    # Claim before summarizing: if the user types while a summary is being
-    # written, the prompt hook interrupts this worker before it says
-    # something stale.
-    player.claim()
+        player.keep_markdown(session, reply)  # for "detalle"
+    # Claim before summarizing: if the user types in this terminal while a
+    # summary is being written, the prompt hook interrupts this worker
+    # before it says something stale. Other terminals are not affected.
+    player.claim(session)
     try:
         if kind == "say":
             text = payload["text"]
         else:
             text = compose_reply(reply, cfg, summarize=_logged(summarizer.summarize))
-            log(f"respuesta: {len(reply)} car. en pantalla → {len(text)} car. hablados")
+            where = f" [{project}]" if project else ""
+            log(f"respuesta{where}: {len(reply)} car. en pantalla → {len(text)} car. hablados")
         if not text:
             return
-        player.speak(text, cfg, keep=kind == "reply")
+        intro = _callsign(project, cfg) if payload.get("callsign", True) else None
+        # If another project is talking, wait for it to finish instead of
+        # cutting it off; the idle reminder does not wait at all.
+        wait = 0 if payload.get("skip_if_busy") else 180 if payload.get("polite") else 300
+        if not player.speak(text, cfg, keep=kind == "reply", session=session, intro=intro, wait=wait):
+            log(f"{'respuesta' if kind == 'reply' else 'aviso'} omitido: otra sesión ocupó la voz demasiado tiempo")
     finally:
-        player.release()
+        player.release(session)
     if payload.get("invent"):
         added = persona.invent(cfg)
         log(f"frases nuevas de Rachel: {len(added)}" + "".join(f" | {line}" for line in added))
 
 
-def detail(cfg):
-    """Narrate the rest of the last reply, beyond the summary already heard."""
+def detail(cfg, session=None):
+    """Narrate the rest of the session's last reply, beyond the summary already heard."""
     h = cfg["honorific"]
-    try:
-        reply = LAST_REPLY_MD.read_text(encoding="utf-8")
-    except OSError:
-        reply = ""
-    player.claim()
+    reply = player.last_markdown(session)
+    player.claim(session)
     try:
         if not reply.strip():
-            player.speak(persona.nothing_to_detail(h), cfg)
+            player.speak(persona.nothing_to_detail(h), cfg, session=session)
             return
         # Narrating takes a few seconds; say so instead of going quiet.
-        player.speak(persona.one_moment(h), cfg)
+        player.speak(persona.one_moment(h), cfg, session=session)
         started = time.monotonic()
-        text = speakable.to_speech(summarizer.narrate(reply, player.last_spoken(), cfg)).replace("\n\n", " ")
+        spoken = player.last_spoken(session)
+        text = speakable.to_speech(summarizer.narrate(reply, spoken, cfg)).replace("\n\n", " ")
         if text:
             log(f"detalle narrado en {time.monotonic() - started:.1f} s → {len(text)} car.")
         else:
             text = speakable.to_speech(reply).replace("\n\n", " ")
             log("detalle: el narrador falló, leo la respuesta limpia")
         text, _ = speakable.truncate(text, cfg.get("detail_max_chars", 2500))
-        player.speak(text, cfg)
+        player.speak(text, cfg, session=session)
     finally:
-        player.release()
+        player.release(session)
 
 
 def _logged(summarize):

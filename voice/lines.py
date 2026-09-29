@@ -105,3 +105,35 @@ SPECIAL_DATES = {
     "11-01": "Empieza noviembre, {h}. El mes en que transcurre Blade Runner: Los Ángeles, 2019.",
     "12-16": "Hoy cumpliría años Philip K. Dick, {h}. Él soñó ovejas eléctricas; nosotros, código que compila.",
 }
+
+# Said before a reply or a notice when Rachel's voice jumps to another
+# project (another terminal): {p} is the project's spoken name. Short, so the
+# user knows where to look before the news, and cached after the first time.
+CALLSIGNS = [
+    ("En {p}, {h}:", 1, None),
+    ("Desde {p}, {h}.", 1, None),
+    ("Aquí {p}, {h}.", 1, None),
+    ("Le hablo desde {p}, {h}.", 1, None),
+    ("Expediente {p}.", 1, None),
+    ("Informe de {p}, {h}.", 1, None),
+    ("Transmisión desde {p}.", 1, None),
+    ("Cambio de escena, {h}: {p}.", 1, None),
+    ("Nueva señal. Viene de {p}.", 1, None),
+    ("Ampliar sector {p}. Detener.", 1, None),
+    ("Frecuencia de {p}, {h}.", 1, None),
+    ("Otra ventana encendida en la ciudad: {p}.", 1, "night"),
+    ("Bajo la lluvia, desde {p}.", 1, "night"),
+    ("Del otro lado de la pirámide: {p}.", 1, "night"),
+    ("Un dirigible trae noticias de {p}.", 1, "day"),
+]
+
+# On opening a session: the project comes right after the salute.
+SESSION_OPENINGS = [
+    ("Expediente {p} abierto.", 1, None),
+    ("Terminal de {p} en línea.", 1, None),
+    ("Volvemos a {p}.", 1, None),
+    ("Conectada a {p}.", 1, None),
+    ("Caso {p}, en curso.", 1, None),
+    ("Otra noche en {p}.", 1, "night"),
+    ("Buen día para {p}.", 1, "day"),
+]
