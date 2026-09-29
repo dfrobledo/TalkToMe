@@ -24,7 +24,9 @@ Proyecto RocketYeah: que Claude Code **hable** con la naturalidad de las convers
 | `UserPromptSubmit` | Se calla al instante: usted tiene la palabra (solo en esa terminal) |
 | Escribes **"repite"** | Repite su última respuesta, sin gastar créditos ni turno de Claude |
 | Escribes **"detalle"** | Le narra el resto de la última respuesta, más allá del resumen |
-| Mantienes **F9** y hablas | Se calla, te escucha y le manda tus palabras a Claude Code (dictado, en desarrollo) |
+| Mantienes **F9** y hablas | Se calla, te escucha y le manda tus palabras a Claude Code; mientras Claude piensa, te acompaña |
+| Algo falla | Te dice qué componente revisar: "Falla de red, señor: no llego a ElevenLabs…" |
+| `SessionEnd` | Al cerrar la última sesión, deja de escuchar y libera F9 |
 
 ## El truco para que suene humano
 
@@ -55,7 +57,9 @@ python talktome.py say
 python install.py
 ```
 
-Abre una sesión nueva de Claude Code y deberías oír el saludo. `install.py` hace copia de seguridad de `~/.claude/settings.json` y es idempotente; `python install.py --uninstall` lo deja todo como estaba. Con `--no-style` instalas solo la voz, sin cambiar el estilo de Claude (en ese caso se lee el primer párrafo de cada respuesta, sea cual sea).
+Abre una sesión nueva de Claude Code y deberías oír el saludo. En Windows ya puedes hablarle: mantén F9, habla y suelta.
+
+Si ya tenías TalkToMe instalado, después de `git pull` vuelve a correr `python install.py`: registra el hook `SessionEnd`, con el que la escucha sabe cuándo irse. `install.py` hace copia de seguridad de `~/.claude/settings.json` y es idempotente; `python install.py --uninstall` lo deja todo como estaba. Con `--no-style` instalas solo la voz, sin cambiar el estilo de Claude (en ese caso se lee el primer párrafo de cada respuesta, sea cual sea).
 
 Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener el audio completo antes de hablar.
 
@@ -93,7 +97,7 @@ Rachel dice "Deme unos segundos" y le pide a Claude (la misma red de seguridad, 
 
 Un detalle largo puede ocupar unos 2.500 caracteres de ElevenLabs (unos tres minutos de voz); el tope es `detail_max_chars`. Escribir cualquier cosa la interrumpe, como siempre.
 
-## Háblale: dictado con una tecla (Fase 2, en desarrollo)
+## Háblale: dictado con una tecla
 
 **Arranca sola con Claude Code**: al abrir una sesión, Rachel empieza a escuchar en segundo plano, sin ventana, y se va cuando cierras la última sesión (o tras 2 horas sin actividad). No hay nada que lanzar. Si prefieres controlarla a mano: `"listen_on_start": false`, y luego `python talktome.py escucha` en su propia consola (`escucha --detener` para terminar la de fondo).
 
@@ -224,6 +228,8 @@ Solo se envía a ElevenLabs lo que se va a decir: el resumen hablado, normalment
 
 La red de seguridad (resumen generado cuando una respuesta no trae el suyo) usa tu plan de Claude, no ElevenLabs. Con el estilo Rachel activo casi nunca hace falta.
 
+El dictado usa Scribe, que ElevenLabs cobra por minuto de audio (solo mientras mantienes F9). El acuse, las interjecciones, el progreso y los avisos de error son frases cortas en caché: se pagan una sola vez por voz (los avisos se generan al abrir sesión, unos 1.200 caracteres).
+
 ## Problemas frecuentes
 
 | Síntoma | Causa y solución |
@@ -233,13 +239,18 @@ La red de seguridad (resumen generado cuando una respuesta no trae el suyo) usa 
 | Acento de España | Voz generada antes del cambio a español latino: `python talktome.py design` (opción `--acento`). |
 | `Invalid API key` (401) | `python talktome.py doctor` muestra el principio y el final de la clave y de dónde sale (`.env` o una variable de entorno de Windows que tiene prioridad). |
 | A veces no lee la respuesta | `type $HOME\.talktome\talktome.log`: cada respuesta deja una línea (si trajo resumen propio, si hubo que generarlo y cuánto tardó, o si llegó vacía), además de cualquier error. |
+| F9 no hace nada | `python talktome.py doctor`: la línea "Dictado" dice si el micrófono responde y si la escucha está corriendo. Si no corre, abre una sesión nueva de Claude Code (o `python talktome.py escucha` a mano). ¿Otra app usa F9? Cambia `listen_key`. |
+| Sale un bip medio y no se envía nada | La pulsación fue demasiado corta (menos de `listen_min_seconds`). Mantén la tecla mientras hablas. |
+| El texto quedó en el portapapeles | Cambiaste de ventana mientras transcribía; pégalo con Ctrl+V. Si pasa siempre en una terminal, puede que corra como administrador: Rachel te lo dice. |
+| El dictado se siente lento | En `talktome.log`, la línea `dictado:` dice cuánto tardó el texto y si fue "en tiempo real" o "por lotes". Si siempre es por lotes, la línea anterior dice por qué falló el tiempo real. |
+| Rachel habla demasiado mientras Claude piensa | `"narrate_progress": "off"` quita interjecciones y progreso; `"voice_ack": false`, el acuse. |
 
 ## Hoja de ruta
 
 - **Fase 1 — Rachel habla** ✅ (este repo): voz latina diseñada a medida, estilo Rachel, resumen hablado de cada respuesta con la pregunta pendiente primero, red de seguridad, saludos, avisos que esperan su turno, interrupción al escribir, "repite" y caché.
-- **Fase 2 — Rachel escucha** 🚧: dictado por voz hacia Claude Code.
-  - **2a — Push-to-talk** (en desarrollo): mantener F9, hablar, soltar; Scribe transcribe en tiempo real y se envía solo. Acuse inmediato, interjecciones y progreso mientras Claude trabaja. "Calla" la silencia sin gastar turno.
-  - **2b — Comandos y permisos por voz**: responder "sí" o "no" a los permisos. (La escucha ya arranca sola con Claude Code.)
+- **Fase 2 — Rachel escucha**: dictado por voz hacia Claude Code.
+  - **2a — Push-to-talk** ✅: mantener F9, hablar, soltar; Scribe transcribe en tiempo real y se envía solo. Acuse inmediato, interjecciones y progreso mientras Claude trabaja. "Calla" la silencia sin gastar turno. La escucha arranca y se va sola con Claude Code, y los errores se dicen en voz alta, con el componente a revisar.
+  - **2b — Comandos y permisos por voz**: responder "sí" o "no" a los permisos.
   - **2c — Palabra de activación "Rachel"**: escucha continua con un detector local.
 - **Fase 3 — Conversación fluida**: modo manos libres de ida y vuelta (voz → Claude Code → voz) con turnos, interrupciones naturales y resumen hablado del progreso de tareas largas.
 
