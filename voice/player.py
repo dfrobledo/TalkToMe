@@ -199,6 +199,22 @@ def speak(text, cfg, keep=False, session=None, intro=None, wait=300):
     return True
 
 
+def cached(text, cfg):
+    """Is `text` already synthesized in this voice, in the format this machine plays?"""
+    return tts.cache_path(text, cfg, "mp3" if _stream_cmd(cfg) else "wav").exists()
+
+
+def prefetch(text, cfg):
+    """Synthesize `text` into the cache without playing it."""
+    ext = "mp3" if _stream_cmd(cfg) else "wav"
+    path = tts.cache_path(text, cfg, ext)
+    if not path.exists():
+        data = b"".join(tts.stream(text, cfg)) if ext == "mp3" else tts.wav(text, cfg)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return path
+
+
 def _say(text, cfg, keep=False, session=None):
     """Synthesize and play `text`. Short phrases are cached on disk."""
     cmd = _stream_cmd(cfg)

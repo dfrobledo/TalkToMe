@@ -7,7 +7,7 @@ import traceback
 
 from pathlib import Path
 
-from . import companion, config, deck, hooks, lines, listen, mic, persona, player, projects, stt, tts
+from . import alerts, companion, config, deck, hooks, lines, listen, mic, persona, player, projects, stt, tts
 from .player import LOG_FILE
 
 SAMPLE = (
@@ -41,10 +41,14 @@ DESIGN_TEXT = (
 )
 
 
-def _log_error():
+def _log_error(cfg=None):
+    """Log the exception being handled and, with a config, have Rachel report it."""
     config.STATE_DIR.mkdir(parents=True, exist_ok=True)
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(traceback.format_exc() + "\n")
+    if cfg is not None:
+        error = sys.exc_info()[1]
+        alerts.report(alerts.classify(error), cfg, str(error)[:200])
 
 
 def cmd_hook(args, cfg):
@@ -56,7 +60,7 @@ def cmd_hook(args, cfg):
     try:
         decision = hooks.handle(args.event, payload, cfg)
     except Exception:
-        _log_error()  # A voice failure must never break Claude Code.
+        _log_error(cfg)  # A voice failure must never break Claude Code.
         return 0
     if decision:
         print(json.dumps(decision, ensure_ascii=False))
@@ -67,7 +71,7 @@ def cmd_worker(args, cfg):
     try:
         hooks.work(args.kind, args.payload, cfg)
     except Exception:
-        _log_error()
+        _log_error(cfg)
     return 0
 
 
@@ -85,7 +89,7 @@ def cmd_repeat(args, cfg):
             print("Todavía no hay ninguna respuesta que repetir.")
     except Exception:
         if args.command == "_repeat":
-            _log_error()  # Detached: nobody is watching the console.
+            _log_error(cfg)  # Detached: nobody is watching the console.
         else:
             raise
     finally:
@@ -97,7 +101,37 @@ def cmd_accompany(args, cfg):
     try:
         companion.accompany(cfg, args.session, args.transcript)
     except Exception:
-        _log_error()  # Detached: nobody is watching the console.
+        _log_error(cfg)  # Detached: nobody is watching the console.
+    return 0
+
+
+def cmd_prepare(args, cfg):
+    try:
+        made = alerts.warm(cfg)
+        if made:
+            hooks.log(f"avisos de error listos en caché: {made} nuevos")
+    except Exception:
+        _log_error()  # no report: ElevenLabs failing here is reported when it matters
+    return 0
+
+
+def cmd_alerts(args, cfg):
+    if args.prueba:
+        if args.prueba not in alerts.LINES:
+            print(f"Tipos: {', '.join(alerts.LINES)}", file=sys.stderr)
+            return 1
+        player.claim()
+        try:
+            player.speak(alerts.line(args.prueba, cfg), cfg)
+        finally:
+            player.release()
+        return 0
+    if args.preparar:
+        print(f"{alerts.warm(cfg)} avisos generados; el resto ya estaba en caché.")
+    for kind in alerts.LINES:
+        text = alerts.line(kind, cfg)
+        print(f"{'✓' if player.cached(text, cfg) else '·'} {kind:<11} {text}")
+    print("✓ = en caché con su voz (funciona aunque ElevenLabs falle). --preparar genera los que falten.")
     return 0
 
 
@@ -107,7 +141,7 @@ def cmd_detail(args, cfg):
         hooks.detail(cfg, session)
     except Exception:
         if args.command == "_detail":
-            _log_error()  # Detached: nobody is watching the console.
+            _log_error(cfg)  # Detached: nobody is watching the console.
         else:
             raise
     return 0
@@ -252,13 +286,16 @@ def cmd_listen(args, cfg):
     except (mic.MicError, ValueError) as e:
         if args.fondo:
             hooks.log(f"escucha en segundo plano: {e}")
+            if not listen.running():  # another one taking over is no error
+                kind = alerts.classify(e)
+                alerts.report(kind if kind != "crash" else "listen", cfg, str(e))
         else:
             print(e, file=sys.stderr)
             return 1
     except Exception:
         if not args.fondo:
             raise
-        _log_error()  # Detached: nobody is watching the console.
+        _log_error(cfg)  # Detached: nobody is watching the console.
     return 0
 
 
@@ -312,6 +349,11 @@ def main(argv=None):
     p.add_argument("session", nargs="?")
     p.add_argument("cwd", nargs="?")
     p.set_defaults(fn=cmd_detail)
+    sub.add_parser("_prepara").set_defaults(fn=cmd_prepare)
+    p = sub.add_parser("avisos", aliases=["alerts"], help="avisos de error de Rachel: cuáles hay y si están en caché")
+    p.add_argument("--preparar", action="store_true", help="generar ya los que falten en caché")
+    p.add_argument("--prueba", metavar="TIPO", help="escuchar uno (auth, mic, network...)")
+    p.set_defaults(fn=cmd_alerts)
     p = sub.add_parser("_acompana")
     p.add_argument("session")
     p.add_argument("transcript")

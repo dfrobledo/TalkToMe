@@ -18,6 +18,7 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 | `talktome.py escucha [--tecla T]` · `listen` | Dictado (solo Windows): mantenga la tecla, hable y suéltela; el texto se escribe en la ventana activa y se envía. Ctrl+C para salir. Una sola escucha a la vez. Normalmente no hace falta: arranca sola con Claude Code. |
 | `talktome.py escucha --detener` | Termina la escucha en segundo plano. |
 | `talktome.py oye [archivo]` · `hear` | Transcribe sin enviar nada: un archivo de audio o, en Windows, el micrófono hasta Enter. |
+| `talktome.py avisos [--preparar] [--prueba TIPO]` · `alerts` | Lista los avisos de error y si están en caché; genera los que falten; dice uno. |
 | `talktome.py stop` | Calla lo que se esté diciendo. |
 | `talktome.py mute` / `unmute` | Silencia o reactiva a Rachel (bandera `~/.talktome/muted`). |
 | `talktome.py doctor` | Diagnóstico: config, clave, reproductor, silencio, micrófono y escucha, cuota. Sale con 1 si algo falta. |
@@ -32,6 +33,7 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 | `_speak <reply\|say> <payload.json>` | `hooks._enqueue` | Worker: `hooks.work`. Borra el payload al leerlo. |
 | `_repeat [sesión] [cwd]` | hook `prompt` | Repite la última respuesta de esa sesión. |
 | `_detail [sesión] [cwd]` | hook `prompt` | Narra el detalle de la última respuesta de esa sesión. |
+| `_prepara` | hook `session` | Genera en caché los avisos de error que falten (`alerts.warm`). |
 | `_acompana <sesión> <transcript>` | hook `prompt` (turno por voz) | Interjecciones y progreso hasta que llegue la respuesta (`companion.accompany`). |
 
 ## Contrato con Claude Code
@@ -79,6 +81,7 @@ Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.j
 | `speak_notifications` | `true` | Decir permisos y recordatorios. |
 | `interrupt_on_prompt` | `true` | Escribir calla a Rachel en esa terminal. |
 | `listen_key` | `"F9"` | Tecla de `escucha`: F1–F24, `Pause`, `ScrollLock`, `RightCtrl`, `RightAlt` o un código `0x..`. |
+| `report_errors` | `true` | Decir en voz alta qué falló (una vez cada 10 min por tipo). |
 | `listen_on_start` | `true` | Arrancar la escucha en segundo plano con cada sesión (Windows). |
 | `listen_idle_minutes` | 120 | Sin ninguna actividad de Claude Code durante este tiempo, la escucha se va. |
 | `listen_min_seconds` | 0.4 | Pulsaciones más cortas se ignoran. |
@@ -129,6 +132,7 @@ Variables de entorno:
 
 | Función | Descripción |
 |---|---|
+| `cached(text, cfg)` / `prefetch(text, cfg)` | ¿Está `text` en caché con esta voz? / Sintetizarlo a la caché sin reproducirlo (avisos de error). |
 | `speak(text, cfg, keep=False, session=None, intro=None, wait=300)` | Espera el turno (hasta `wait` s), dice `intro(proyecto_anterior)` si devuelve texto y luego `text`. `False` si no consiguió el turno. |
 | `replay(cfg, session=None)` | Repite la última respuesta de la sesión (audio guardado si está completo). |
 | `claim(session=None)` | Registra el proceso como worker de la sesión y corta al anterior de esa sesión. Sin sesión: toma la palabra ya. |
@@ -174,6 +178,7 @@ Variables de entorno:
 | `listen.py` | `Listener(cfg, desk, transcribe, stream, hush, acknowledge, …).dictate()`: un dictado completo; `run()` los encadena; `serve(cfg, key)` es `escucha`; `running()` → pid de la escucha activa. |
 | `realtime.py` | `Stream(cfg)`: `feed(pcm)`, `finish(timeout)` → texto, `cancel()`; `url(cfg)`; `WebSocket` mínimo; `encode_frame` / `read_frame`. |
 | `mic.py` | Solo Windows, con `ctypes`: `Desk(key)` (tecla por gancho de teclado de bajo nivel, o hotkey si no se puede; ventana activa, `type_text`, `copy`, `beep`), `KeyWatcher`, `Recorder` (waveIn, 16 kHz mono en trozos de 100 ms, `start(on_chunk)`, `stop(path)` → WAV), `vk_code`, `key_events`. |
+| `alerts.py` | `classify(error)` → auth/quota/no_key/network/mic/elevated/player/crash; `report(kind, cfg, detail)` (nunca lanza); `line(kind, cfg)`; `missing(cfg)` / `warm(cfg)`: avisos en caché; `system_say(text)`: voz del sistema. |
 | `companion.py` | `accompany(cfg, session, transcript)`; `Companion.run()`: lee el transcript y habla con pausas crecientes (`gap(n)`), tono de interjección según la espera (`tone(n)`); `turn_done(session)`. |
 | `config.py` | `load()`, `save_voice_id(id)`, `set_muted(bool)`, `STATE_DIR`, `ROOT`, `DEFAULTS`. |
 
@@ -198,6 +203,7 @@ Variables de entorno:
 | `sessions/<id>/turn-done` | hook `stop` | El turno terminó: el acompañante se calla. |
 | `open-sessions/<id>` | hooks `session` / `end` | Sesiones de Claude Code abiertas. |
 | `claude-activity` | todos los hooks | Última actividad de Claude Code. |
+| `alerts.json` | `alerts.due` | Última vez que se dijo cada tipo de aviso. |
 | `listen-dozed` | `listen.serve` | La escucha se fue por inactividad; el próximo prompt la despierta. |
 | `sessions/<id>/project` | `player.remember_project` | Nombre hablado del proyecto. |
 | `sessions/<id>/worker.pid` | `player.claim` | Worker activo de esa sesión. |

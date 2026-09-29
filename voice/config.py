@@ -45,6 +45,9 @@ DEFAULTS = {
     # Folder name → spoken name, or {"name": ..., "voice_id": ..., ...}
     # for a project with its own name, voice or honorific.
     "projects": {},
+    # Rachel says out loud what went wrong (her voice, or the system's when
+    # ElevenLabs is the problem), at most once every few minutes per kind.
+    "report_errors": True,
     "greet_on_start": True,
     "speak_notifications": True,
     "interrupt_on_prompt": True,

@@ -202,6 +202,12 @@ def handle(event, payload, cfg):
         # The greeting already names the project: no callsign on top.
         _enqueue("say", {"text": persona.greeting(cfg["honorific"], project=named), "polite": True,
                          "callsign": False, **where})
+    if event == "session":
+        from . import alerts
+
+        # Her error messages, ready in the cache before anything fails.
+        if cfg.get("report_errors", True) and alerts.missing(cfg):
+            player.spawn("_prepara")
     elif event == "notification" and cfg.get("speak_notifications"):
         line = persona.notification(payload, cfg["honorific"])
         if line:
@@ -377,6 +383,10 @@ def _logged(summarize):
         started = time.monotonic()
         text = summarize(reply, cfg)
         log(f"sin resumen propio → resumidor {'OK' if text else 'FALLÓ'} en {time.monotonic() - started:.1f} s")
+        if not text:
+            from . import alerts
+
+            alerts.report("summarizer", cfg)
         return text
 
     return run

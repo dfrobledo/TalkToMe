@@ -95,13 +95,14 @@ def dictate(desk, heard="Revisa las pruebas del módulo de telemetría.", cfg=No
     clock = Clock()
     desk.clock = clock
     out = []
-    hush, acknowledge = mock.Mock(), mock.Mock()
+    hush, acknowledge, report = mock.Mock(), mock.Mock(), mock.Mock()
     listener = listen.Listener(cfg or DEFAULTS, desk, transcribe=transcribe or (lambda audio, cfg: heard),
-                               stream=lambda cfg: stream, hush=hush, acknowledge=acknowledge,
+                               stream=lambda cfg: stream, hush=hush, acknowledge=acknowledge, report=report,
                                clock=clock, sleep=clock.sleep, out=out.append)
     with mock.patch("voice.listen.hooks.log"):
         text = listener.dictate()
     listener.acknowledged = acknowledge
+    desk.reported = [c.args[0] for c in report.call_args_list]
     desk.listener = listener
     return text, hush, out
 
@@ -127,6 +128,7 @@ class ListenerTest(unittest.TestCase):
         desk = FakeDesk()
         text, _, _ = dictate(desk, heard=" (risas) ")
         self.assertEqual((text, desk.typed, desk.beeps), ("", [], ["start", "error"]))
+        self.assertEqual(desk.reported, [])  # silence is not an error
 
     def test_calla_only_silences(self):
         desk = FakeDesk()
@@ -147,6 +149,7 @@ class ListenerTest(unittest.TestCase):
         self.assertEqual((text, desk.typed), ("", []))
         self.assertEqual(desk.clipboard, ["Revisa las pruebas del módulo de telemetría."])
         self.assertIn("portapapeles", out[0])
+        self.assertEqual(desk.reported, ["clipboard"])
 
     def test_scribe_failure_is_reported_not_raised(self):
         def broken(audio, cfg):
@@ -156,11 +159,13 @@ class ListenerTest(unittest.TestCase):
         text, _, out = dictate(desk, transcribe=broken)
         self.assertEqual((text, desk.typed, desk.beeps[-1]), ("", [], "error"))
         self.assertIn("401", out[0])
+        self.assertEqual(desk.reported, ["auth"])
 
     def test_no_microphone(self):
         desk = FakeDesk(mic_fail="micrófono (open): no hay dispositivo")
         text, _, out = dictate(desk)
         self.assertEqual((text, desk.beeps), ("", ["error"]))
+        self.assertEqual(desk.reported, ["mic"])
 
     def test_realtime_text_wins_and_audio_streams_while_recording(self):
         desk, stream = FakeDesk(), FakeStream("Corre las pruebas.")
@@ -172,6 +177,7 @@ class ListenerTest(unittest.TestCase):
         desk, stream = FakeDesk(), FakeStream(fail="Scribe en tiempo real: auth_error")
         text, _, _ = dictate(desk, heard="Por lotes.", stream=stream)
         self.assertEqual(text, "Por lotes.")
+        self.assertEqual(desk.reported, ["realtime"])  # it works, but she says it is slower
 
     def test_tap_cancels_the_stream(self):
         desk, stream = FakeDesk(held=0.1), FakeStream("x")
@@ -352,7 +358,7 @@ class AutoStartTest(unittest.TestCase):
     def test_session_start_launches_the_listener_once(self):
         self.assertIn(("escucha", "--fondo"), self.hook("session"))
         self.assertNotIn(("escucha", "--fondo"), self.hook("session", running=1234))
-        self.assertEqual(self.hook("session", cfg={**self.CFG, "listen_on_start": False}), [])
+        self.assertNotIn(("escucha", "--fondo"), self.hook("session", cfg={**self.CFG, "listen_on_start": False}))
 
     def test_open_sessions_keep_it_alive(self):
         self.hook("session", "a")

@@ -416,7 +416,9 @@ El comando del hook está pensado para funcionar igual en Git Bash y en PowerShe
 | Excepciones de hooks y workers | `cli._log_error` → traza completa en `talktome.log`. El hook sale con 0. |
 | Una línea por decisión | `hooks.log`: largo en pantalla y hablado, proyecto, si hubo resumidor y cuánto tardó, avisos omitidos. |
 | Fallas del resumidor | `summarizer._log`: código de salida y los primeros 300 caracteres del error. |
-| Autodiagnóstico | `talktome.py doctor`: config, clave enmascarada y su origen, reproductor, silencio, cuota. |
+| Autodiagnóstico | `talktome.py doctor`: config, clave enmascarada y su origen, reproductor, silencio, micrófono, escucha, cuota. |
+| Avisos en voz alta | `alerts.report`: cada error de un worker, de la escucha o del resumidor se clasifica (`alerts.classify`) y Rachel dice qué componente revisar, como mucho una vez cada 10 minutos por tipo. |
+| Avisos sin ElevenLabs | Al abrir sesión, `_prepara` sintetiza los avisos en caché (`alerts.warm`). Si falla la clave, los créditos o la red, ella los dice desde la caché; si no están, habla la voz del sistema (`System.Speech` en Windows, `say` en macOS, `spd-say`/`espeak` en Linux). |
 | Evitar bucles | `TALKTOME_DISABLE=1` en el entorno del `claude -p` interno: sus propios hooks no hacen nada. Además corre con `disableAllHooks`. |
 
 ## 13. Cómo extenderlo

@@ -15,7 +15,7 @@ import os
 import threading
 import time
 
-from . import hooks, mic, persona, player, realtime, stt
+from . import alerts, hooks, mic, persona, player, realtime, stt
 from .config import STATE_DIR
 from .tts import TTSError
 
@@ -44,9 +44,9 @@ class Listener:
     """One hold-to-talk dictation after another. `desk` is the desktop (mic.Desk)."""
 
     def __init__(self, cfg, desk, transcribe=stt.transcribe, stream=_stream, hush=_hush, acknowledge=_acknowledge,
-                 clock=time.monotonic, sleep=time.sleep, out=print):
+                 report=alerts.report, clock=time.monotonic, sleep=time.sleep, out=print):
         self.cfg, self.desk, self.transcribe, self.stream = cfg, desk, transcribe, stream
-        self.hush, self.acknowledge = hush, acknowledge
+        self.hush, self.acknowledge, self.report = hush, acknowledge, report
         self.clock, self.sleep, self.out = clock, sleep, out
 
     def run(self, alive=None, every=5.0):
@@ -74,7 +74,7 @@ class Listener:
         except mic.MicError as e:
             if stream:
                 stream.cancel()
-            return self._fail(str(e))
+            return self._fail(str(e), "mic")
         self.desk.beep("start")
         self.hush()
         started = self.clock()
@@ -93,19 +93,23 @@ class Listener:
         except (mic.MicError, OSError) as e:
             if stream:
                 stream.cancel()
-            return self._fail(str(e))
+            return self._fail(str(e), "mic")
         released = self.clock()
-        text, how = None, "por lotes"
+        text, how, realtime_error = None, "por lotes", None
         if stream:
             try:
                 text, how = stream.finish(self.cfg.get("stt_realtime_timeout", 5)), "en tiempo real"
             except TTSError as e:
+                realtime_error = e
                 hooks.log(f"dictado: {e}; paso a Scribe por lotes")
         if text is None:
             try:
                 text = self.transcribe(audio, self.cfg)
             except (TTSError, OSError) as e:
-                return self._fail(str(e))
+                kind = alerts.classify(e)
+                return self._fail(str(e), kind if kind != "crash" else "stt")
+        if realtime_error:
+            self.report("realtime", self.cfg, str(realtime_error))  # works, only slower
         text = stt.clean(text)
         took = self.clock() - released
         if not text:
@@ -115,15 +119,17 @@ class Listener:
             self.out(f"» {text}  (Rachel calla)")
             return ""
         hooks.mark_dictated(text)
+        blocked = None
         try:
             typed = self.desk.type_text(text, window)
         except mic.MicError as e:
-            typed = False
+            typed, blocked = False, e
             hooks.log(f"dictado: {e}")
         if not typed:
             self.desk.copy(text)
             self.desk.beep("error")
             hooks.log(f"dictado: la ventana cambió, texto en el portapapeles ({len(text)} car.)")
+            self.report(alerts.classify(blocked) if blocked else "clipboard", self.cfg, str(blocked or ""))
             self.out(f"» {text}  (quedó en el portapapeles)")
             return ""
         self.acknowledge(self.cfg)
@@ -131,10 +137,12 @@ class Listener:
         self.out(f"» {text}")
         return text
 
-    def _fail(self, why):
+    def _fail(self, why, kind=None):
         hooks.log(f"dictado: {why}")
         self.out(f"  ({why})")
         self.desk.beep("error")
+        if kind:
+            self.report(kind, self.cfg, why)
         return ""
 
 
