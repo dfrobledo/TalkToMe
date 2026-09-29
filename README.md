@@ -68,6 +68,7 @@ Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener e
 | `python talktome.py design` | Crear su voz con Voice Design (ver abajo) |
 | `python talktome.py voices` | Listar tus voces con su ID |
 | `python talktome.py quota` | Caracteres disponibles en tu plan |
+| `python talktome.py frases` | Ver el banco de frases y las que inventó Claude (`--inventa`: pedir nuevas ya) |
 | `python talktome.py stop` | Callar la frase en curso |
 | `python talktome.py mute` / `unmute` | Silenciar / reactivar a Rachel |
 | `python talktome.py doctor` | Diagnóstico completo |
@@ -88,6 +89,18 @@ Rachel dice "Deme unos segundos" y le pide a Claude (la misma red de seguridad, 
 
 Un detalle largo puede ocupar unos 2.500 caracteres de ElevenLabs (unos tres minutos de voz); el tope es `detail_max_chars`. Escribir cualquier cosa la interrumpe, como siempre.
 
+## Frases de Rachel: nunca la misma dos veces
+
+Saludos, avisos de permiso y recordatorios de espera salen de un banco de frases del universo Blade Runner (`voice/lines.py`): la película, 2049 y la novela de Philip K. Dick.
+
+- **Mazo barajado.** Ninguna frase se repite hasta que salieron todas las de su mazo, y al barajar de nuevo nunca repite la última.
+- **Escalada.** Si la dejas esperando varias veces seguidas (en menos de hora y media), el recordatorio sube de tono: primero suave ("Llueve en Los Ángeles…"), luego irónico ("Mis pupilas no se dilatan…") y al tercero dramático ("…como lágrimas en la lluvia"). Después vuelve a empezar.
+- **Hora del día.** De noche hay lluvia, neón y la pirámide Tyrell; de día, sol sobre las granjas de proteínas.
+- **Efemérides.** El 8 de enero (activación de Roy Batty), el 25 de junio (estreno de Blade Runner), el 6 de octubre (estreno de 2049), el 1 de noviembre (el mes de la película) y el 16 de diciembre (natalicio de Philip K. Dick) la primera frase del día lo recuerda.
+- **Frases inventadas.** Después de un recordatorio, una de cada cinco veces (`invent_chance`), Claude escribe tres frases nuevas con tu plan y se suman al mazo. Nunca retrasa a Rachel: ocurre cuando ya terminó de hablar. Se guardan en `~/.talktome/lines.json` (las últimas `invented_max`), aparecen en `talktome.log` y las ves con `python talktome.py frases`. Si alguna no te gusta, bórrala de ese archivo.
+
+Todas caben en la caché: cada frase gasta caracteres de ElevenLabs solo la primera vez que se dice.
+
 ## Configuración (`talktome.config.json`)
 
 | Clave | Valor por defecto | Notas |
@@ -100,7 +113,9 @@ Un detalle largo puede ocupar unos 2.500 caracteres de ElevenLabs (unos tres min
 | `max_chars` | 450 | En `auto`, respuestas hasta este largo se leen completas |
 | `summary_max_chars` | 650 | Tope del resumen hablado: protege tus créditos |
 | `detail_max_chars` | 2500 | Tope de la lectura del detalle |
-| `summarizer` | `"claude"` | Red de seguridad para respuestas sin resumen; `"off"` la apaga |
+| `summarizer` | `"claude"` | Red de seguridad para respuestas sin resumen; `"off"` la apaga (y también las frases inventadas) |
+| `invent_chance` | 0.2 | Probabilidad de que Claude invente frases nuevas tras un recordatorio; 0 lo apaga |
+| `invented_max` | 60 | Cuántas frases inventadas se conservan |
 | `greet_on_start`, `speak_notifications`, `interrupt_on_prompt` | `true` | |
 | `player` | `auto` | `mpv`, `ffplay` o `auto` |
 
@@ -149,4 +164,4 @@ La red de seguridad (resumen generado cuando una respuesta no trae el suyo) usa 
 python -m unittest -v      # pruebas (sin red ni audio)
 ```
 
-Estructura: `voice/speakable.py` (markdown → habla, detección del resumen y de preguntas pendientes), `transcript.py` (respuesta final), `summarizer.py` (red de seguridad con `claude -p`), `tts.py` (ElevenLabs y Voice Design), `player.py` (audio, segundo plano, turnos, interrupción, repetir), `hooks.py` (eventos de Claude Code), `persona.py` (frases de Rachel), `cli.py` (comandos). `tests/` incluye respuestas reales de RockAvionics como casos de prueba. Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.
+Estructura: `voice/speakable.py` (markdown → habla, detección del resumen y de preguntas pendientes), `transcript.py` (respuesta final), `summarizer.py` (red de seguridad con `claude -p`), `tts.py` (ElevenLabs y Voice Design), `player.py` (audio, segundo plano, turnos, interrupción, repetir), `hooks.py` (eventos de Claude Code), `persona.py` (qué frase dice Rachel), `lines.py` (banco de frases), `deck.py` (mazos barajados, escalada y frases inventadas), `cli.py` (comandos). `tests/` incluye respuestas reales de RockAvionics como casos de prueba. Los errores nunca rompen Claude Code: se registran en `~/.talktome/talktome.log`.

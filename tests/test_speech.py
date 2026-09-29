@@ -243,7 +243,7 @@ class PersonaTest(unittest.TestCase):
             {"notification_type": "permission_prompt", "message": "Claude needs your permission to use Bash"},
             "señor",
         )
-        self.assertTrue(line.startswith("Señor, necesito su permiso para usar Bash."))
+        self.assertIn("Bash", line)
 
     def test_ignores_non_attention_notifications(self):
         self.assertEqual(persona.notification({"notification_type": "auth_success"}, "señor"), "")

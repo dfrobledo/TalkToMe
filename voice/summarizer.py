@@ -2,7 +2,8 @@
 
 Runs Claude Code headless (`claude -p`) on the user's own plan. Sonnet at
 low effort measured faster and more faithful to the facts than Haiku. It only kicks in for replies that did not open with a summary, so the
-usual path stays instant and free.
+usual path stays instant and free. The same channel narrates the detail on
+demand and, now and then, invents new idle lines for Rachel.
 """
 import os
 import shutil
@@ -114,4 +115,28 @@ def narrate(reply, spoken, cfg):
         # Ask for less than the hard cap: the model overshoots, and the cut
         # would fall on the end, where the questions usually are.
         max_chars=int(cfg.get("detail_max_chars", 2500) * 0.8), reply=reply[:20000],
+    ), cfg)
+
+
+INVENTION = """Escribes frases para Rachel, la replicante de Blade Runner que hoy es la asistente de voz del usuario, a quien llama "{h}". Rachel las dice en voz alta cuando el usuario lleva un rato sin responderle: le recuerda, con estilo, que sigue ahí esperando.
+
+Escribe {count} frases NUEVAS. Reglas:
+1. Cada frase se apoya en el universo Blade Runner: la película de 1982, Blade Runner 2049, los cortos (2022, 2036, 2048) o la novela de Philip K. Dick. Personajes, lugares, objetos, pruebas, recuerdos; reinterpretados con ingenio, nunca citas literales largas.
+2. Varía las referencias entre frases y aléjate de las que ya existen (abajo). Sorprende: busca rincones menos obvios de ese universo.
+3. Tono de Rachel: serena, elegante, con humor seco o melancolía noir. Nunca grosera ni amenazante.
+4. Español latinoamericano neutro, trato de usted, sin voseo ni "vosotros".
+5. Cada frase incluye exactamente una vez el marcador {{h}} donde va el trato ("Sigo aquí, {{h}}."). Nada de otras llaves.
+6. Máximo {max_chars} caracteres por frase. Sin markdown, emojis, comillas ni numeración.
+
+Responde SOLO con las {count} frases, una por línea.
+
+--- FRASES QUE YA EXISTEN ---
+{known}
+--- FIN ---"""
+
+
+def invent_lines(known, cfg, count=3):
+    """New idle lines from Claude, one per line with a literal {h}; "" on failure."""
+    return _ask_claude(INVENTION.format(
+        h=cfg["honorific"], count=count, max_chars=120, known="\n".join(known),
     ), cfg)
