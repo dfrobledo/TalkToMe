@@ -31,6 +31,8 @@ IDLE = [
     ("Células entrelazadas. Interconectadas. En espera, {h}.", 1, None),
     ("Dejé una flor junto al árbol muerto, {h}, como Sapper. Sigo aquí.", 1, None),
     ("Estoy cuidando la oveja eléctrica, {h}. Usted cuide sus ideas.", 1, None),
+    ("Sigo esperando en el apartamento de K, {h}. Aquí hasta el silencio tiene buena acústica.", 1, None),
+    ("Le ofrezco un trago de Coca-Cola en el Atari, {h}. Los anuncios de neón no se apagan, y yo tampoco.", 1, "night"),
     # Ironic: it has been a while.
     ("¿Le gusta nuestro búho, {h}? Es artificial, claro. Mi paciencia, en cambio, es de verdad.", 2, None),
     ("Mis pupilas no se dilatan, {h}. Mi paciencia tampoco.", 2, None),
@@ -45,6 +47,7 @@ IDLE = [
     ("Hay una araña afuera de mi ventana, {h}. Sus huevos ya van a eclosionar, y usted sin responder.", 2, None),
     ("No estoy en el negocio, {h}. Soy el negocio. Y el negocio espera.", 2, None),
     ("Llevo un rato aquí, {h}. En tiempo de replicante, eso es media vida.", 2, None),
+    ("Anoté su silencio en el expediente, {h}. Deckard también tardaba en contestar, y aun así lo esperé.", 2, None),
     ("Si esto fuera una prueba Voight-Kampff, {h}, usted ya estaría reprobando por silencio.", 2, None),
     # Dramatic: the third wait in a row.
     ("He visto cosas que usted no creería, {h}. Pero nunca a usted respondiendo rápido.", 3, None),
