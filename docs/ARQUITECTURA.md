@@ -20,6 +20,7 @@ Este documento explica cómo está armado por dentro. Para instalarlo y usarlo, 
 12. [Errores y diagnóstico](#12-errores-y-diagnóstico)
 13. [Cómo extenderlo](#13-cómo-extenderlo)
 14. [Dictado: Rachel escucha](#14-dictado-rachel-escucha)
+15. [Llamarla por su nombre](#15-llamarla-por-su-nombre)
 
 ---
 
@@ -124,6 +125,7 @@ En verde, los módulos **puros**: sin red, audio ni estado global, y por eso los
 | `mic.py` | Windows con `ctypes`: gancho de teclado, micrófono `waveIn`, `SendInput`, portapapeles. |
 | `stt.py` · `realtime.py` | Scribe por lotes (multipart) y en tiempo real (WebSocket propio). |
 | `companion.py` | Interjecciones y progreso mientras Claude trabaja en un turno dictado. |
+| `wake.py` | Llamarla por su nombre: reconocimiento local (Vosk), conversación y micrófono compartido (sección 15). |
 
 ## 4. Del hook al altavoz: una respuesta
 
@@ -443,6 +445,7 @@ python -m unittest -v   # sin red ni audio
 | `tests/test_lines.py` | Mazos, escalada, hora del día, fechas especiales, frases inventadas. |
 | `tests/test_sessions.py` | Aislamiento por sesión, turno atómico, interrupción por terminal, distintivos, proyectos. |
 | `tests/test_listen.py` | Dictado con un escritorio simulado, tiempo real y respaldo por lotes, WebSocket, "calla", petición a Scribe, limpieza, teclas y estructuras de Windows. |
+| `tests/test_wake.py` | Su nombre al inicio, compuerta por energía, la conversación completa (de un tirón, con pausa, silencio, "nada", "calla", eco, F9), entrega a la terminal correcta, micrófono compartido. |
 | `tests/test_companion.py` | Tipos de actividad, frases, lectura incremental del transcript, pausas del acompañante, detección del turno por voz, tiempos. |
 
 ## 14. Dictado: Rachel escucha
@@ -519,3 +522,31 @@ Se tiene que ir sola, porque mientras corre se queda con F9 en todo Windows. Cad
 ### Tiempos
 
 `talktome.log` anota una línea por dictado ("2.1 s de voz → 48 car., texto 0.3 s después de soltar (en tiempo real)") y otra por respuesta ("tiempos: Claude 23.4 s · voz 1.1 s después"), a partir de `prompt-at`, la hora del `Stop` y `player.first_sound`.
+
+
+## 15. Llamarla por su nombre
+
+El micrófono queda abierto mientras corre la escucha, pero **nada sale de la PC hasta que se dice "Rachel"**: su nombre se reconoce en local con Vosk y un modelo pequeño de español. Vosk es la única dependencia opcional del proyecto: sin él, todo lo demás funciona igual.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Dormida
+    Dormida --> Llamada: parcial de Vosk empieza con su nombre\n(calla a Rachel · abre Scribe Realtime)
+    Llamada --> Dormida: final sin su nombre al inicio\n(era una conversación)
+    Llamada --> Entrega: final con más palabras\n"Rachel, corre las pruebas"
+    Llamada --> Escuchando: final solo con su nombre\n"¿Sí, señor?"
+    Escuchando --> Entrega: habló y hubo 1,2 s de silencio
+    Escuchando --> Dormida: 6 s sin hablar\n"Será en otro momento"
+    Entrega --> Dormida: "calla" · "nada" · texto a la terminal
+```
+
+Piezas:
+
+- **Un solo micrófono** (`Hub`): la grabadora `waveIn` queda abierta sin acumular audio (`keep=False`). Cada trozo de 100 ms va a la cola del reconocedor y, mientras F9 está presionada, también a un `Tap`, que le da a la tecla la misma interfaz que `Recorder` pero arranca al instante. Mientras la tecla graba, la activación se pausa.
+- **Compuerta por energía** (`Gate`): el reconocedor solo recibe audio cuando alguien habla, con 300 ms previos para no perder el inicio de la palabra. Se cierra tras 2 s de silencio, y ahí se pide el resultado final. El piso de ruido baja rápido y sube lento, así que un ventilador o la lluvia no cuentan como voz.
+- **Su nombre al inicio**: `find_wake` solo acepta el nombre como primera palabra, o después de "oye", "hey"… Así "le dije a Rachel que…" en una conversación no la despierta. Las variantes (`WAKE_WORDS` + `wake_words`) cubren cómo un modelo en español escribe "Rachel": raquel, reichel, ray chel…
+- **Rapidez**: basta el resultado parcial para callarla y abrir Scribe Realtime, con el audio del inicio de la frase. Si la orden venía en el mismo aliento, al terminar solo falta el `commit`. Las respuestas cortas ("¿Sí, señor?") se pre-generan en caché al abrir sesión (`persona.stock_lines`).
+- **Sin eco**: `player` escribe en `speaking.txt` lo que está diciendo. Si su nombre aparece ahí, un "Rachel" que llegue mientras habla es su propia voz y se ignora. Después de responder, se descarta el audio que grabó el micrófono mientras ella hablaba.
+- **A qué terminal va**: los hooks `session` y `prompt` guardan la ventana que estaba al frente (`sessions/<id>/window`). `choose_window` elige la de Claude que esté al frente o, si no hay, la última usada que siga abierta. `Desk.bring_to_front` la restaura si está minimizada y, con un toque de Alt, consigue que Windows le ceda el primer plano. Si no hay ninguna, el texto queda en el portapapeles y Rachel lo dice.
+- **Mismo camino que F9 después**: la orden se marca como dictada (`mark_dictated`), así que el turno recibe acuse, interjecciones y progreso; "repite" y "detalle" funcionan igual.
+- **Probado sin micrófono**: `Wake` recibe el reconocedor, la voz, la entrega y el reloj como dependencias. Las pruebas usan un reconocedor con guion, audio sintético fuerte y silencioso, y un escritorio falso.

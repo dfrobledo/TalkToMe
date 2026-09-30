@@ -195,3 +195,24 @@ def activity(tool, tool_input=None):
 def progress(kind, h, now=None):
     """A short line about what Claude is doing (`kind` from `activity`)."""
     return _fill(_draw(f"progress-{kind}", lines.PROGRESS[kind], now or datetime.now()), h)
+
+
+def stock_lines(h, expressive=False):
+    """Every short line she may need in a hurry (acknowledgements, answers to
+    her name, thinking sounds, progress), to synthesize ahead of time."""
+    banks = [lines.ACKS, lines.WAKE, lines.WAKE_TIMEOUT, lines.WAKE_CANCEL, lines.THINKING]
+    banks += list(lines.PROGRESS.values()) + ([lines.THINKING_V3] if expressive else [])
+    return list(dict.fromkeys(_fill(text, h) for bank in banks for text, _, _ in bank))
+
+
+def wake(h, flavor=False, now=None):
+    """Her answer when called by name: short, or (`flavor`) a nod to the films."""
+    return _fill(_draw("wake", lines.WAKE, now or datetime.now(), tone=2 if flavor else 1), h)
+
+
+def wake_timeout(h, now=None):
+    return _fill(_draw("wake-timeout", lines.WAKE_TIMEOUT, now or datetime.now()), h)
+
+
+def wake_cancel(h, now=None):
+    return _fill(_draw("wake-cancel", lines.WAKE_CANCEL, now or datetime.now()), h)

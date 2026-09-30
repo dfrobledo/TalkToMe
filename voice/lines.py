@@ -235,3 +235,49 @@ PROGRESS = {
         ("Sigo en ello, {h}.", 1, None),
     ],
 }
+
+# When you call her by name. Tone 1: short, so she answers at once; tone 2
+# (now and then, `wake_flavor`): a nod to the films.
+WAKE = [
+    ("Dígame, {h}.", 1, None),
+    ("¿Sí, {h}?", 1, None),
+    ("Le escucho, {h}.", 1, None),
+    ("Aquí estoy, {h}.", 1, None),
+    ("¿Me llamaba, {h}?", 1, None),
+    ("Presente, {h}.", 1, None),
+    ("Adelante, {h}.", 1, None),
+    ("Soy toda oídos, {h}.", 1, None),
+    # Rachael to Deckard, in Tyrell's office.
+    ("¿Es esto una prueba de empatía, {h}?", 2, None),
+    # K's baseline test, 2049.
+    ("Células entrelazadas. Le escucho.", 2, None),
+    ("Línea base estable, {h}. Dígame.", 2, None),
+    # The Tyrell Corporation motto.
+    ("Más humana que humana, y toda oídos.", 2, None),
+    # Deckard's Esper machine.
+    ("Ampliar. Detener. Le escucho, {h}.", 2, None),
+    # Rachael at Deckard's piano.
+    ("Dejé el piano a medias, {h}. Dígame.", 2, None),
+    ("El búho puede esperar, {h}. Usted no.", 2, None),
+    ("Recuerdo cada orden suya, {h}. Deme otra.", 2, None),
+    ("Aquí Rachel, desde la pirámide Tyrell.", 2, "night"),
+    ("Sigo bajo la lluvia, {h}. Dígame.", 2, "night"),
+    ("Hay sol sobre las granjas de proteínas, {h}. ¿Qué necesita?", 2, "day"),
+]
+
+# She answered, and then nothing was said.
+WAKE_TIMEOUT = [
+    ("Será en otro momento, {h}.", 1, None),
+    ("Cuando guste, {h}. No me voy a ninguna parte.", 1, None),
+    ("Falsa alarma. Vuelvo con mi búho.", 1, None),
+    ("Silencio. Lo anoto en el expediente.", 1, None),
+    ("Me quedo aquí, bajo la lluvia.", 1, "night"),
+]
+
+# "Rachel... nada, olvídalo."
+WAKE_CANCEL = [
+    ("Como guste, {h}.", 1, None),
+    ("Olvidado, {h}. Como lágrimas en la lluvia.", 1, None),
+    ("Entendido. Aquí sigo.", 1, None),
+    ("Borrado del expediente, {h}.", 1, None),
+]

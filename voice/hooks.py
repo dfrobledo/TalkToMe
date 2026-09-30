@@ -7,6 +7,7 @@ import json
 import os
 import random
 import re
+import sys
 import time
 import unicodedata
 
@@ -154,6 +155,8 @@ def handle(event, payload, cfg):
     # that one was saying, and "repite" repeats its own last reply.
     session = payload.get("session_id") or ""
     track(event, session)
+    if event in ("session", "prompt"):
+        remember_window(session)
     if event == "end":
         return None
     if event == "prompt":
@@ -205,8 +208,8 @@ def handle(event, payload, cfg):
     if event == "session":
         from . import alerts
 
-        # Her error messages, ready in the cache before anything fails.
-        if cfg.get("report_errors", True) and alerts.missing(cfg):
+        # Her error messages and quick lines, ready in the cache beforehand.
+        if alerts.missing(cfg, persona.stock_lines(cfg["honorific"], cfg["model_id"] == "eleven_v3")):
             player.spawn("_prepara")
     elif event == "notification" and cfg.get("speak_notifications"):
         line = persona.notification(payload, cfg["honorific"])
@@ -228,6 +231,37 @@ ACTIVITY = STATE_DIR / "claude-activity"
 # Left by a background listener that quit for lack of activity: the next
 # prompt brings it back.
 LISTEN_DOZED = STATE_DIR / "listen-dozed"
+
+
+def remember_window(session):
+    """The terminal window of `session`: the one in front when a prompt is sent
+    (or the session opens). A spoken command goes there."""
+    if sys.platform != "win32" or not session:
+        return
+    import ctypes
+
+    ctypes.windll.user32.GetForegroundWindow.restype = ctypes.c_void_p
+    window = ctypes.windll.user32.GetForegroundWindow()
+    if window:
+        folder = player.session_dir(session)
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "window").write_text(str(window), encoding="utf-8")
+
+
+def session_windows():
+    """[(window, time last used)] of the open Claude Code sessions, newest first."""
+    found = []
+    try:
+        open_ids = [p.name for p in OPEN_SESSIONS.iterdir()]
+    except OSError:
+        return []
+    for session in open_ids:
+        path = player.session_dir(session) / "window"
+        try:
+            found.append((int(path.read_text()), path.stat().st_mtime))
+        except (OSError, ValueError):
+            continue
+    return sorted(found, key=lambda item: -item[1])
 
 
 def track(event, session):

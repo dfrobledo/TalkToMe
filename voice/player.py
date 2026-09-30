@@ -12,6 +12,8 @@ from .config import ROOT, STATE_DIR
 
 # Whoever is speaking right now: one voice, one sound card, for every session.
 PID_FILE = STATE_DIR / "speaking.pid"
+# What she is saying right now: the name spotter must not wake to her own voice.
+SPEAKING = STATE_DIR / "speaking.txt"
 # The worker has no console; on Windows each console program it starts
 # (ffplay, mpv, claude) would otherwise pop up a window of its own.
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -215,8 +217,22 @@ def prefetch(text, cfg):
     return path
 
 
+def speaking():
+    """Text being said right now, if anyone is speaking."""
+    return _read(SPEAKING) if busy() or _pid(PID_FILE) == os.getpid() else ""
+
+
 def _say(text, cfg, keep=False, session=None):
     """Synthesize and play `text`. Short phrases are cached on disk."""
+    STATE_DIR.mkdir(parents=True, exist_ok=True)
+    SPEAKING.write_text(text, encoding="utf-8")
+    try:
+        _say_now(text, cfg, keep, session)
+    finally:
+        SPEAKING.unlink(missing_ok=True)
+
+
+def _say_now(text, cfg, keep=False, session=None):
     cmd = _stream_cmd(cfg)
     if keep:
         session_dir(session).mkdir(parents=True, exist_ok=True)

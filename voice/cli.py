@@ -7,7 +7,7 @@ import traceback
 
 from pathlib import Path
 
-from . import alerts, companion, config, deck, hooks, lines, listen, mic, persona, player, projects, stt, tts
+from . import alerts, companion, config, deck, hooks, lines, listen, mic, persona, player, projects, stt, tts, wake
 from .player import LOG_FILE
 
 SAMPLE = (
@@ -107,9 +107,9 @@ def cmd_accompany(args, cfg):
 
 def cmd_prepare(args, cfg):
     try:
-        made = alerts.warm(cfg)
+        made = alerts.warm(cfg, persona.stock_lines(cfg["honorific"], cfg["model_id"] == "eleven_v3"))
         if made:
-            hooks.log(f"avisos de error listos en caché: {made} nuevos")
+            hooks.log(f"frases y avisos listos en caché: {made} nuevos")
     except Exception:
         _log_error()  # no report: ElevenLabs failing here is reported when it matters
     return 0
@@ -127,7 +127,8 @@ def cmd_alerts(args, cfg):
             player.release()
         return 0
     if args.preparar:
-        print(f"{alerts.warm(cfg)} avisos generados; el resto ya estaba en caché.")
+        stock = persona.stock_lines(cfg["honorific"], cfg["model_id"] == "eleven_v3")
+        print(f"{alerts.warm(cfg, stock)} frases generadas; el resto ya estaba en caché.")
     for kind in alerts.LINES:
         text = alerts.line(kind, cfg)
         print(f"{'✓' if player.cached(text, cfg) else '·'} {kind:<11} {text}")
@@ -234,6 +235,8 @@ def cmd_doctor(args, cfg):
         print(f"Dictado:    {state} · tecla {cfg['listen_key']} · {cfg['stt_model']} · "
               f"{'tiempo real' if cfg['stt_realtime'] else 'por lotes'} · "
               f"{f'escuchando (proceso {active})' if active else idle}")
+        ready, why = wake.engine(cfg)
+        print(f"Activación: {'«Rachel» · Vosk listo' if wake.enabled(cfg) else why if cfg.get('wake') != False else 'apagada'}")
     else:
         print("Dictado:    solo en Windows por ahora")
     if cfg["api_key"]:
@@ -296,6 +299,55 @@ def cmd_listen(args, cfg):
         if not args.fondo:
             raise
         _log_error(cfg)  # Detached: nobody is watching the console.
+    return 0
+
+
+def cmd_wake(args, cfg):
+    """Her name: install the local recognizer, test what it hears, or show its state."""
+    if args.instalar:
+        try:
+            wake.install(cfg)
+        except Exception as e:
+            print(f"No se pudo instalar: {e}", file=sys.stderr)
+            print(f"Manual: pip install vosk, y descomprima {wake.MODEL_URL} en {wake.model_path(cfg).parent}",
+                  file=sys.stderr)
+            return 1
+        print("Abra una sesión nueva de Claude Code (o reinicie la escucha) y diga «Rachel».")
+        return 0
+    ready, why = wake.engine(cfg)
+    if not args.prueba:
+        state = "lista" if wake.enabled(cfg) else ("apagada en la config" if ready else why)
+        print(f"Activación por voz: {state}")
+        print(f"  Palabras: {', '.join(dict.fromkeys(wake.WAKE_WORDS + list(cfg.get('wake_words') or [])))}")
+        print("  Pruebe qué oye: python talktome.py despierta --prueba")
+        return 0 if ready else 1
+    if not ready:
+        print(f"Activación por voz: {why}", file=sys.stderr)
+        return 1
+    if not mic.available():
+        print("La prueba con micrófono funciona en Windows.", file=sys.stderr)
+        return 1
+    import queue
+
+    words = list(dict.fromkeys(wake.WAKE_WORDS + list(cfg.get("wake_words") or [])))
+    spotter = wake.VoskSpotter(wake.model_path(cfg))
+    chunks = queue.Queue()
+    recorder = mic.Recorder()
+    recorder.start(on_chunk=chunks.put, keep=False)
+    print("Hable (Ctrl+C para salir). Diga «Rachel» y vea qué entiende el reconocedor local.")
+    print("Si su nombre sale escrito de otra forma, agréguela a \"wake_words\" en la config.")
+    try:
+        while True:
+            kind, text = spotter.feed(chunks.get())
+            if kind == "final" and text:
+                called = "  ← ¡la llamó!" if wake.find_wake(wake.normalize(text).split(), words) else ""
+                print(f"\r» {text}{called}".ljust(70))
+            elif text:
+                print(f"\r  {text[-66:]}".ljust(70), end="", flush=True)
+    except KeyboardInterrupt:
+        print()
+    finally:
+        recorder.cancel()
     return 0
 
 
@@ -378,6 +430,10 @@ def main(argv=None):
     p.add_argument("--fondo", action="store_true", help=argparse.SUPPRESS)  # launched by SessionStart
     p.add_argument("--detener", action="store_true", help="detiene la escucha en segundo plano")
     p.set_defaults(fn=cmd_listen)
+    p = sub.add_parser("despierta", aliases=["wake"], help="activación por voz: diga «Rachel»")
+    p.add_argument("--instalar", action="store_true", help="instala Vosk y el modelo de español (~40 MB)")
+    p.add_argument("--prueba", action="store_true", help="muestra en vivo lo que oye el reconocedor local")
+    p.set_defaults(fn=cmd_wake)
     p = sub.add_parser("oye", aliases=["hear"], help="transcribe sin enviar: un archivo o el micrófono")
     p.add_argument("archivo", nargs="?", help="audio a transcribir (sin él, graba hasta Enter)")
     p.set_defaults(fn=cmd_hear)

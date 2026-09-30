@@ -15,7 +15,7 @@ import os
 import threading
 import time
 
-from . import alerts, hooks, mic, persona, player, realtime, stt
+from . import alerts, hooks, mic, persona, player, realtime, stt, wake
 from .config import STATE_DIR
 from .tts import TTSError
 
@@ -44,8 +44,9 @@ class Listener:
     """One hold-to-talk dictation after another. `desk` is the desktop (mic.Desk)."""
 
     def __init__(self, cfg, desk, transcribe=stt.transcribe, stream=_stream, hush=_hush, acknowledge=_acknowledge,
-                 report=alerts.report, clock=time.monotonic, sleep=time.sleep, out=print):
+                 report=alerts.report, recorder=None, clock=time.monotonic, sleep=time.sleep, out=print):
         self.cfg, self.desk, self.transcribe, self.stream = cfg, desk, transcribe, stream
+        self.recorder = recorder or desk.recorder
         self.hush, self.acknowledge, self.report = hush, acknowledge, report
         self.clock, self.sleep, self.out = clock, sleep, out
 
@@ -67,7 +68,7 @@ class Listener:
     def dictate(self):
         """Record while the key is held, then deliver what was said. Returns the text typed."""
         window = self.desk.foreground()
-        recorder = self.desk.recorder()
+        recorder = self.recorder()
         stream = self.stream(self.cfg)
         try:
             recorder.start(on_chunk=stream.feed if stream else None)
@@ -146,6 +147,93 @@ class Listener:
         return ""
 
 
+def choose_window(desk):
+    """Where a spoken command goes: the Claude Code terminal in front, or else
+    the one used last. None if no open session has a window left."""
+    windows = [window for window, _ in hooks.session_windows()]
+    front = desk.foreground()
+    if front in windows:
+        return front
+    return next((window for window in windows if desk.alive(window)), None)
+
+
+def deliverer(cfg, desk, out=print, acknowledge=_acknowledge, report=alerts.report):
+    """`deliver(text)` for commands said to her by name: to the right terminal."""
+    def deliver(text, error=None):
+        if error is not None:
+            kind = alerts.classify(error)
+            report(kind if kind != "crash" else "stt", cfg, str(error))
+            return
+        window = choose_window(desk)
+        if not window:
+            desk.copy(text)
+            report("no_target", cfg)
+            out(f"» {text}  (sin terminal: quedó en el portapapeles)")
+            return
+        hooks.mark_dictated(text)
+        blocked = None
+        try:
+            typed = desk.type_text(text, window)
+        except mic.MicError as e:
+            typed, blocked = False, e
+        if not typed:
+            desk.copy(text)
+            report(alerts.classify(blocked) if blocked else "focus", cfg, str(blocked or ""))
+            out(f"» {text}  (quedó en el portapapeles)")
+            return
+        acknowledge(cfg)
+        hooks.log(f"activación → {len(text)} car. a la terminal")
+        out(f"» {text}")
+
+    return deliver
+
+
+def _say_blocking(cfg):
+    def say(text):
+        if cfg.get("muted") or not cfg.get("enabled", True):
+            return
+        try:
+            player.speak(text, cfg, wait=0)
+        except Exception as e:  # her answer failing must not stop the listening
+            hooks.log(f"activación: no pude responder: {e}")
+            alerts.report(alerts.classify(e), cfg, str(e))
+    return say
+
+
+def _echo(words):
+    def echo():
+        said = wake.normalize(player.speaking())
+        return bool(said) and any(wake.normalize(w) in said for w in words)
+    return echo
+
+
+def start_wake(cfg, desk, out=print):
+    """Listen for her name in the background. Returns (hub, stop event) or (None, None)."""
+    if not wake.enabled(cfg):
+        ready, why = wake.engine(cfg)
+        if cfg.get("wake") is True:
+            hooks.log(f"activación por voz: {why}")
+            alerts.report("wake", cfg, why)
+        return None, None
+    try:
+        spotter = wake.VoskSpotter(wake.model_path(cfg))
+        hub = wake.Hub(mic.Recorder())
+        hub.start()
+    except Exception as e:
+        hooks.log(f"activación por voz: {e}")
+        alerts.report(alerts.classify(e) if isinstance(e, mic.MicError) else "wake", cfg, str(e))
+        return None, None
+    words = list(dict.fromkeys(wake.WAKE_WORDS + list(cfg.get("wake_words") or [])))
+    listener = wake.Wake(cfg, spotter, say=_say_blocking(cfg), deliver=deliverer(cfg, desk, out),
+                         transcribe=stt.transcribe, stop_voice=_hush, stream=_stream, echo=_echo(words),
+                         paused=lambda: hub.tap is not None, drain=hub.drain, log=hooks.log)
+    stop = threading.Event()
+    wake.start_thread(hub.run, listener, stop)
+    hooks.log("activación por voz: escuchando su nombre")
+    out("Y diga «Rachel» cuando la necesite.")
+    return hub, stop
+
+
 def running():
     """pid of the listener already running, if any: two would type everything twice."""
     try:
@@ -207,7 +295,14 @@ def serve(cfg, key=None, out=print, background=False):
         out(f"Rachel escucha: mantenga {key} mientras habla y suéltela para enviar. Ctrl+C para salir.")
         if not desk.exclusive:
             out(f"  Aviso: otro programa ya usa {key}; la tecla también le llegará a la ventana activa.")
-        Listener(cfg, desk, out=out).run(alive=alive)
+        hub, stop_wake = start_wake(cfg, desk, out)
+        recorder = hub.recorder_for_key if hub else None
+        try:
+            Listener(cfg, desk, out=out, recorder=recorder).run(alive=alive)
+        finally:
+            if hub:
+                stop_wake.set()
+                hub.close()
         if background:
             if any(hooks.OPEN_SESSIONS.glob("*")):
                 hooks.LISTEN_DOZED.touch()  # the next prompt wakes it up

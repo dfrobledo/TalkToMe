@@ -17,6 +17,7 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 | `talktome.py frases [--inventa]` · `lines` | Banco de frases e inventadas; `--inventa` pide nuevas ya. |
 | `talktome.py escucha [--tecla T]` · `listen` | Dictado (solo Windows): mantenga la tecla, hable y suéltela; el texto se escribe en la ventana activa y se envía. Ctrl+C para salir. Una sola escucha a la vez. Normalmente no hace falta: arranca sola con Claude Code. |
 | `talktome.py escucha --detener` | Termina la escucha en segundo plano. |
+| `talktome.py despierta [--instalar] [--prueba]` · `wake` | Activación por voz: estado; instala Vosk y el modelo de español; muestra en vivo lo que entiende. |
 | `talktome.py oye [archivo]` · `hear` | Transcribe sin enviar nada: un archivo de audio o, en Windows, el micrófono hasta Enter. |
 | `talktome.py avisos [--preparar] [--prueba TIPO]` · `alerts` | Lista los avisos de error y si están en caché; genera los que falten; dice uno. |
 | `talktome.py stop` | Calla lo que se esté diciendo. |
@@ -33,7 +34,7 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 | `_speak <reply\|say> <payload.json>` | `hooks._enqueue` | Worker: `hooks.work`. Borra el payload al leerlo. |
 | `_repeat [sesión] [cwd]` | hook `prompt` | Repite la última respuesta de esa sesión. |
 | `_detail [sesión] [cwd]` | hook `prompt` | Narra el detalle de la última respuesta de esa sesión. |
-| `_prepara` | hook `session` | Genera en caché los avisos de error que falten (`alerts.warm`). |
+| `_prepara` | hook `session` | Genera en caché los avisos de error y las frases cortas que falten (`alerts.warm` + `persona.stock_lines`). |
 | `_acompana <sesión> <transcript>` | hook `prompt` (turno por voz) | Interjecciones y progreso hasta que llegue la respuesta (`companion.accompany`). |
 
 ## Contrato con Claude Code
@@ -82,6 +83,12 @@ Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.j
 | `interrupt_on_prompt` | `true` | Escribir calla a Rachel en esa terminal. |
 | `listen_key` | `"F9"` | Tecla de `escucha`: F1–F24, `Pause`, `ScrollLock`, `RightCtrl`, `RightAlt` o un código `0x..`. |
 | `report_errors` | `true` | Decir en voz alta qué falló (una vez cada 10 min por tipo). |
+| `wake` | `"auto"` | Escuchar su nombre: `auto` (si Vosk y el modelo están), `true` (y avisa si falta) o `false`. |
+| `wake_words` | `[]` | Formas extra de escribir su nombre, sumadas a `wake.WAKE_WORDS`. |
+| `wake_model` | `""` | Carpeta del modelo Vosk (por defecto `~/.talktome/models/vosk-model-small-es-0.42`). |
+| `wake_timeout` | 6 | Segundos para empezar a hablar tras "¿Sí, señor?". |
+| `wake_silence` | 1.2 | Segundos de silencio que terminan la orden. |
+| `wake_flavor` | 0.3 | Probabilidad de una respuesta con guiño a las películas. |
 | `listen_on_start` | `true` | Arrancar la escucha en segundo plano con cada sesión (Windows). |
 | `listen_idle_minutes` | 120 | Sin ninguna actividad de Claude Code durante este tiempo, la escucha se va. |
 | `listen_min_seconds` | 0.4 | Pulsaciones más cortas se ignoran. |
@@ -122,6 +129,7 @@ Variables de entorno:
 | `detail(cfg, session=None)` | Narra el detalle de la última respuesta de la sesión. |
 | `compose_reply(markdown, cfg, summarize=None)` | Qué decir de una respuesta (ver las tres capas en ARQUITECTURA). |
 | `is_repeat(prompt)` / `is_detail(prompt)` / `is_stop(prompt)` | ¿El mensaje completo es "repite"/"detalle"/"calla"? |
+| `remember_window(session)` / `session_windows()` | La ventana al frente al abrir sesión o enviar un prompt; las de las sesiones abiertas, la más reciente primero. |
 | `track(event, session)` / `claude_open(idle, grace)` / `start_listening()` | Sesiones abiertas y actividad; ¿sigue Claude Code en uso?; lanza la escucha si no corre. |
 | `mark_dictated(text)` / `was_dictated(prompt)` | La escucha anota lo que dictó; el hook `prompt` reconoce el turno por voz (una vez, hasta 30 s). |
 | `narrates(cfg, voice)` | ¿Acompañar este turno? Según `narrate_progress`, silencio y clave. |
@@ -178,7 +186,10 @@ Variables de entorno:
 | `listen.py` | `Listener(cfg, desk, transcribe, stream, hush, acknowledge, …).dictate()`: un dictado completo; `run()` los encadena; `serve(cfg, key)` es `escucha`; `running()` → pid de la escucha activa. |
 | `realtime.py` | `Stream(cfg)`: `feed(pcm)`, `finish(timeout)` → texto, `cancel()`; `url(cfg)`; `WebSocket` mínimo; `encode_frame` / `read_frame`. |
 | `mic.py` | Solo Windows, con `ctypes`: `Desk(key)` (tecla por gancho de teclado de bajo nivel, o hotkey si no se puede; ventana activa, `type_text`, `copy`, `beep`), `KeyWatcher`, `Recorder` (waveIn, 16 kHz mono en trozos de 100 ms, `start(on_chunk)`, `stop(path)` → WAV), `vk_code`, `key_events`. |
+| `persona.py` (voz) | `wake(h, flavor)`, `wake_timeout(h)`, `wake_cancel(h)`, `stock_lines(h, expressive)`: frases cortas a pre-generar. |
 | `alerts.py` | `classify(error)` → auth/quota/no_key/network/mic/elevated/player/crash; `report(kind, cfg, detail)` (nunca lanza); `line(kind, cfg)`; `missing(cfg)` / `warm(cfg)`: avisos en caché; `system_say(text)`: voz del sistema. |
+| `wake.py` | `find_wake(words)`, `strip_wake(text)`, `is_cancel(text)`, `normalize`, `level(pcm)`; `Gate` (compuerta por energía con piso adaptativo); `Wake(cfg, spotter, say, deliver, transcribe, …).handle(pcm)`: dormida → llamada → escuchando la orden; `VoskSpotter`; `Hub` / `Tap`: un micrófono abierto compartido con F9; `engine(cfg)`, `enabled(cfg)`, `install(cfg)`. |
+| `listen.py` (voz) | `start_wake(cfg, desk)`, `deliverer(cfg, desk)` → `deliver(text)`, `choose_window(desk)`. |
 | `companion.py` | `accompany(cfg, session, transcript)`; `Companion.run()`: lee el transcript y habla con pausas crecientes (`gap(n)`), tono de interjección según la espera (`tone(n)`); `turn_done(session)`. |
 | `config.py` | `load()`, `save_voice_id(id)`, `set_muted(bool)`, `STATE_DIR`, `ROOT`, `DEFAULTS`. |
 
@@ -200,6 +211,9 @@ Variables de entorno:
 | `dictado.wav` | `listen` / `cli oye` | Último dictado, para revisarlo con `oye dictado.wav`. |
 | `dictated.json` | `hooks.mark_dictated` | Texto y hora del último dictado; el hook `prompt` lo consume. |
 | `sessions/<id>/prompt-at` | hook `prompt` | Hora del último prompt, para medir el turno de Claude. |
+| `sessions/<id>/window` | hooks `session` / `prompt` | Ventana de la terminal de esa sesión (Windows). |
+| `speaking.txt` | `player` | Lo que está diciendo ahora: su propia voz no la despierta. |
+| `models/vosk-model-small-es-0.42/` | `despierta --instalar` | Modelo del reconocedor local. |
 | `sessions/<id>/turn-done` | hook `stop` | El turno terminó: el acompañante se calla. |
 | `open-sessions/<id>` | hooks `session` / `end` | Sesiones de Claude Code abiertas. |
 | `claude-activity` | todos los hooks | Última actividad de Claude Code. |

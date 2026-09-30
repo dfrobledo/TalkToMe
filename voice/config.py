@@ -53,6 +53,16 @@ DEFAULTS = {
     "interrupt_on_prompt": True,
     # Dictation (talktome escucha): hold this key, speak, release to send.
     "listen_key": "F9",
+    # Say "Rachel" to call her (Vosk, offline): "auto" once it is installed
+    # (talktome despierta --instalar), true, or false.
+    "wake": "auto",
+    "wake_words": [],
+    "wake_model": "",
+    # After "¿Sí, señor?": seconds to start speaking, and of silence that ends it.
+    "wake_timeout": 6,
+    "wake_silence": 1.2,
+    # How often her answer is a nod to the films instead of a plain "Dígame".
+    "wake_flavor": 0.3,
     # Start listening in the background with Claude Code (Windows), and stop
     # once every session closed or after this long without any activity.
     "listen_on_start": True,

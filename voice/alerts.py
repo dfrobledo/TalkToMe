@@ -37,6 +37,9 @@ LINES = {
     "summarizer": "Falla en el resumidor, {h}: Claude por consola no responde. Revise que claude esté en el PATH.",
     "player": "Falla en el audio, {h}: no encuentro el reproductor. Instale mpv.",
     "clipboard": "Cambió de ventana, {h}. Le dejé el texto en el portapapeles.",
+    "focus": "Falla al traer la terminal, {h}: Windows no me dejó ponerla al frente. El texto está en el portapapeles.",
+    "no_target": "Falta la terminal, {h}: no encuentro una sesión de Claude Code abierta. El texto está en el portapapeles.",
+    "wake": "Falla en la activación por voz, {h}: no pude cargar Vosk o su modelo. Corra talktome despierta.",
     "crash": "Falla interna de TalkToMe, {h}. El detalle está en el registro, talktome punto log.",
 }
 # Seconds before the same kind is said again.
@@ -117,19 +120,20 @@ def report(kind, cfg, detail=""):
         return False
 
 
-def missing(cfg):
-    """Alert lines not yet in the cache in the current voice."""
-    return [line(kind, cfg) for kind in LINES if not player.cached(line(kind, cfg), cfg)]
+def missing(cfg, extra=()):
+    """Alert lines (and `extra` lines) not yet in the cache in the current voice."""
+    texts = [line(kind, cfg) for kind in LINES] + list(extra)
+    return [text for text in dict.fromkeys(texts) if not player.cached(text, cfg)]
 
 
-def warm(cfg):
-    """Synthesize every alert line into the cache while ElevenLabs works.
+def warm(cfg, extra=()):
+    """Synthesize every alert line (and `extra`) into the cache while ElevenLabs works.
 
-    A one-time cost of about 1,200 characters per voice; afterwards the
-    alerts need no network. Returns how many were made.
+    A one-time cost of a few thousand characters per voice; afterwards they
+    play at once and need no network. Returns how many were made.
     """
     made = 0
-    for text in missing(cfg):
+    for text in missing(cfg, extra):
         player.prefetch(text, cfg)
         made += 1
     return made

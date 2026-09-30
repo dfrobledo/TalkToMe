@@ -18,6 +18,7 @@ KEYS = {
     "scrolllock": 0x91, "rctrl": 0xA3, "rightctrl": 0xA3, "ralt": 0xA5, "rightalt": 0xA5,
 }
 VK_RETURN = 0x0D
+VK_MENU = 0x12
 INPUT_KEYBOARD = 1
 KEYEVENTF_KEYUP = 0x0002
 KEYEVENTF_UNICODE = 0x0004
@@ -151,7 +152,10 @@ class Recorder:
         self._check(self.winmm.waveInAddBuffer(self.handle, ctypes.byref(header), size), "encolar")
         self.queue.append(header)
 
-    def start(self, on_chunk=None):
+    def start(self, on_chunk=None, keep=True):
+        """Start recording. `keep=False` for a microphone that stays open for
+        hours: chunks only go to `on_chunk`, nothing piles up in memory."""
+        self.keep = keep
         fmt = WAVEFORMATEX(wFormatTag=1, nChannels=1, nSamplesPerSec=RATE, nAvgBytesPerSec=RATE * 2,
                            nBlockAlign=2, wBitsPerSample=16, cbSize=0)
         handle = ctypes.c_void_p()
@@ -177,7 +181,8 @@ class Recorder:
             data = ctypes.string_at(header.lpData, header.dwBytesRecorded)
             self.winmm.waveInUnprepareHeader(self.handle, ctypes.byref(header), ctypes.sizeof(WAVEHDR))
             if data:
-                self.chunks.append(data)
+                if self.keep:
+                    self.chunks.append(data)
                 if self.on_chunk:
                     self.on_chunk(data)
             if self.running:
@@ -287,6 +292,9 @@ class Desk:
         u = self.user32 = ctypes.WinDLL("user32", use_last_error=True)
         u.GetForegroundWindow.restype = wintypes.HWND
         u.SetForegroundWindow.argtypes = [wintypes.HWND]
+        u.IsWindow.argtypes = [wintypes.HWND]
+        u.IsIconic.argtypes = [wintypes.HWND]
+        u.ShowWindow.argtypes = [wintypes.HWND, ctypes.c_int]
         u.SendInput.argtypes = [ctypes.c_uint, ctypes.POINTER(INPUT), ctypes.c_int]
         u.SendInput.restype = ctypes.c_uint
         u.GetAsyncKeyState.argtypes = [ctypes.c_int]
@@ -325,13 +333,28 @@ class Desk:
     def foreground(self):
         return self.user32.GetForegroundWindow()
 
+    def alive(self, window):
+        return bool(window) and bool(self.user32.IsWindow(window))
+
+    def bring_to_front(self, window):
+        """Put `window` in front (restored if minimized). False if Windows refused."""
+        if self.user32.IsIconic(window):
+            self.user32.ShowWindow(window, 9)  # SW_RESTORE
+        # Windows only hands the foreground to whoever had the last input: a
+        # tap of Alt makes that us.
+        self._send([INPUT(type=INPUT_KEYBOARD, ki=KEYBDINPUT(wVk=VK_MENU)),
+                    INPUT(type=INPUT_KEYBOARD, ki=KEYBDINPUT(wVk=VK_MENU, dwFlags=KEYEVENTF_KEYUP))])
+        self.user32.SetForegroundWindow(window)
+        for _ in range(10):
+            if self.foreground() == window:
+                return True
+            time.sleep(0.03)
+        return False
+
     def type_text(self, text, window, enter=True):
-        """Type `text` into `window` and press Enter. False if that window is no longer in front."""
-        if window and self.foreground() != window:
-            self.user32.SetForegroundWindow(window)
-            time.sleep(0.05)
-            if self.foreground() != window:
-                return False
+        """Type `text` into `window` and press Enter. False if that window cannot be put in front."""
+        if window and self.foreground() != window and not self.bring_to_front(window):
+            return False
         self._send(key_events(text))
         if enter:
             # Apart from the text: a terminal that gets both in one burst
