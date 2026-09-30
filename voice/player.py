@@ -16,6 +16,8 @@ PID_FILE = STATE_DIR / "speaking.pid"
 # (ffplay, mpv, claude) would otherwise pop up a window of its own.
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
 LOG_FILE = STATE_DIR / "talktome.log"
+# time.time() when the last utterance started to sound, for the timing log.
+first_sound = None
 
 # Streaming players start talking while ElevenLabs is still generating.
 STREAM_PLAYERS = {
@@ -57,7 +59,14 @@ def describe(cfg):
     return f"{cmd[0]} (sin streaming)" if cmd else None
 
 
+def _sounding():
+    global first_sound
+    if first_sound is None:
+        first_sound = time.time()
+
+
 def _play_wav(data):
+    _sounding()
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     path = STATE_DIR / "last.wav"
     path.write_bytes(data)
@@ -77,6 +86,7 @@ def play_mp3(data, cfg):
     cmd = _stream_cmd(cfg)
     if not cmd:
         return False
+    _sounding()
     subprocess.run(cmd, input=data, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, creationflags=NO_WINDOW)
     return True
 
@@ -189,6 +199,22 @@ def speak(text, cfg, keep=False, session=None, intro=None, wait=300):
     return True
 
 
+def cached(text, cfg):
+    """Is `text` already synthesized in this voice, in the format this machine plays?"""
+    return tts.cache_path(text, cfg, "mp3" if _stream_cmd(cfg) else "wav").exists()
+
+
+def prefetch(text, cfg):
+    """Synthesize `text` into the cache without playing it."""
+    ext = "mp3" if _stream_cmd(cfg) else "wav"
+    path = tts.cache_path(text, cfg, ext)
+    if not path.exists():
+        data = b"".join(tts.stream(text, cfg)) if ext == "mp3" else tts.wav(text, cfg)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+    return path
+
+
 def _say(text, cfg, keep=False, session=None):
     """Synthesize and play `text`. Short phrases are cached on disk."""
     cmd = _stream_cmd(cfg)
@@ -218,6 +244,7 @@ def _say(text, cfg, keep=False, session=None):
         for chunk in chunks:
             proc.stdin.write(chunk)
             proc.stdin.flush()
+            _sounding()
             audio.append(chunk)
         complete = True
     except (BrokenPipeError, OSError):

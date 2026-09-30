@@ -147,3 +147,51 @@ def done(h):
 
 def more_on_screen(h):
     return f"El detalle está en pantalla, {h}."
+
+
+def ack(h, now=None):
+    """Said the moment a dictation is sent."""
+    return _fill(_draw("ack", lines.ACKS, now or datetime.now()), h)
+
+
+def thinking(h, tone=1, expressive=False, now=None):
+    """A thinking sound while Claude works; eleven_v3 (`expressive`) also sighs and hums."""
+    bank = lines.THINKING + (lines.THINKING_V3 if expressive else [])
+    return _fill(_draw("thinking", bank, now or datetime.now(), tone=tone), h)
+
+
+TESTS = re.compile(r"\b(pytest|unittest|jest|vitest|mocha|tox|nox|ctest|(npm|pnpm|yarn|bun) (run )?test|"
+                   r"(cargo|go|dotnet|mvn|gradle|make|platformio|pio) test)\b")
+QUIET_TOOLS = {"ToolSearch", "TodoRead", "TaskGet", "TaskList", "ExitPlanMode", "EnterPlanMode"}
+
+
+def activity(tool, tool_input=None):
+    """What a tool call means to a listener: read, edit, test, git, shell, web, agent, plan or other.
+
+    None for bookkeeping tools nobody wants narrated.
+    """
+    if tool in QUIET_TOOLS:
+        return None
+    if tool in ("Read", "Grep", "Glob", "LS", "NotebookRead"):
+        return "read"
+    if tool in ("Edit", "MultiEdit", "Write", "NotebookEdit"):
+        return "edit"
+    if tool in ("Bash", "PowerShell"):
+        command = str((tool_input or {}).get("command", ""))
+        if TESTS.search(command):
+            return "test"
+        if re.match(r"\s*(cd\s+\S+\s*(&&|;)\s*)?git\b", command):
+            return "git"
+        return "shell"
+    if tool in ("WebSearch", "WebFetch"):
+        return "web"
+    if tool in ("Task", "Agent"):
+        return "agent"
+    if tool in ("TodoWrite", "TaskCreate", "TaskUpdate"):
+        return "plan"
+    return "other"
+
+
+def progress(kind, h, now=None):
+    """A short line about what Claude is doing (`kind` from `activity`)."""
+    return _fill(_draw(f"progress-{kind}", lines.PROGRESS[kind], now or datetime.now()), h)

@@ -15,19 +15,26 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 | `talktome.py voices` | Lista las voces de su cuenta de ElevenLabs. |
 | `talktome.py quota` | Caracteres usados y disponibles. |
 | `talktome.py frases [--inventa]` · `lines` | Banco de frases e inventadas; `--inventa` pide nuevas ya. |
+| `talktome.py escucha [--tecla T]` · `listen` | Dictado (solo Windows): mantenga la tecla, hable y suéltela; el texto se escribe en la ventana activa y se envía. Ctrl+C para salir. Una sola escucha a la vez. Normalmente no hace falta: arranca sola con Claude Code. |
+| `talktome.py escucha --detener` | Termina la escucha en segundo plano. |
+| `talktome.py oye [archivo]` · `hear` | Transcribe sin enviar nada: un archivo de audio o, en Windows, el micrófono hasta Enter. |
+| `talktome.py avisos [--preparar] [--prueba TIPO]` · `alerts` | Lista los avisos de error y si están en caché; genera los que falten; dice uno. |
 | `talktome.py stop` | Calla lo que se esté diciendo. |
 | `talktome.py mute` / `unmute` | Silencia o reactiva a Rachel (bandera `~/.talktome/muted`). |
-| `talktome.py doctor` | Diagnóstico: config, clave, reproductor, silencio, cuota. Sale con 1 si algo falta. |
+| `talktome.py doctor` | Diagnóstico: config, clave, reproductor, silencio, micrófono y escucha, cuota. Sale con 1 si algo falta. |
 | `install.py [--no-style] [--uninstall]` | Instala o quita los hooks y el estilo Rachel. |
 
 ### Internos
 
 | Comando | Lo lanza | Qué hace |
 |---|---|---|
-| `hook <session\|prompt\|notification\|stop>` | Claude Code | Lee el JSON de stdin y llama a `hooks.handle`; imprime la decisión si la hay. |
+| `hook <session\|prompt\|notification\|stop\|end>` | Claude Code | Lee el JSON de stdin y llama a `hooks.handle`; imprime la decisión si la hay. |
+| `escucha --fondo` | hook `session` (o `prompt` tras una pausa) | La escucha sin consola; se va cuando Claude Code se cierra. |
 | `_speak <reply\|say> <payload.json>` | `hooks._enqueue` | Worker: `hooks.work`. Borra el payload al leerlo. |
 | `_repeat [sesión] [cwd]` | hook `prompt` | Repite la última respuesta de esa sesión. |
 | `_detail [sesión] [cwd]` | hook `prompt` | Narra el detalle de la última respuesta de esa sesión. |
+| `_prepara` | hook `session` | Genera en caché los avisos de error que falten (`alerts.warm`). |
+| `_acompana <sesión> <transcript>` | hook `prompt` (turno por voz) | Interjecciones y progreso hasta que llegue la respuesta (`companion.accompany`). |
 
 ## Contrato con Claude Code
 
@@ -38,12 +45,12 @@ Cada hook recibe un JSON por stdin. TalkToMe usa estos campos:
 | `session_id` | todos | Separa la memoria y la interrupción por terminal. |
 | `cwd` | todos | Identifica el proyecto (`projects.identify`). |
 | `source` | `SessionStart` | Solo saluda con `startup` (no con `resume` ni `clear`). |
-| `prompt` / `prompt_text` | `UserPromptSubmit` | Detecta "repite" y "detalle". |
+| `prompt` / `prompt_text` | `UserPromptSubmit` | Detecta "repite", "detalle" y "calla". |
 | `notification_type`, `message` | `Notification` | Tipo de aviso y herramienta que pide permiso. |
 | `last_assistant_message` | `Stop` | Respuesta final (versiones nuevas de Claude Code). |
 | `transcript_path` | `Stop` | Respaldo: se lee el JSONL si no llegó la respuesta. |
 
-Salida: solo el hook `prompt` puede responder, con `{"decision": "block", "reason": "…"}` para "repite" y "detalle". Los demás no imprimen nada. Todos salen con código 0, incluso si fallan.
+Salida: solo el hook `prompt` puede responder, con `{"decision": "block", "reason": "…"}` para "repite", "detalle" y "calla". Los demás no imprimen nada. Todos salen con código 0, incluso si fallan.
 
 Tipos de notificación que Rachel dice (`persona.ATTENTION`): `permission_prompt`, `idle_prompt`, `elicitation_dialog`, `agent_needs_input`. Los demás (por ejemplo `auth_success`) se ignoran.
 
@@ -73,6 +80,19 @@ Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.j
 | `greet_on_start` | `true` | Saludo al abrir sesión. |
 | `speak_notifications` | `true` | Decir permisos y recordatorios. |
 | `interrupt_on_prompt` | `true` | Escribir calla a Rachel en esa terminal. |
+| `listen_key` | `"F9"` | Tecla de `escucha`: F1–F24, `Pause`, `ScrollLock`, `RightCtrl`, `RightAlt` o un código `0x..`. |
+| `report_errors` | `true` | Decir en voz alta qué falló (una vez cada 10 min por tipo). |
+| `listen_on_start` | `true` | Arrancar la escucha en segundo plano con cada sesión (Windows). |
+| `listen_idle_minutes` | 120 | Sin ninguna actividad de Claude Code durante este tiempo, la escucha se va. |
+| `listen_min_seconds` | 0.4 | Pulsaciones más cortas se ignoran. |
+| `listen_max_seconds` | 120 | Al llegar aquí se envía aunque siga presionada. |
+| `stt_model` | `"scribe_v2"` | Modelo de Speech-to-Text de ElevenLabs. |
+| `stt_keyterms` | `[]` | Palabras que Scribe debe esperar (proyectos, jerga, nombres). En tiempo real se usan hasta 50, de 20 caracteres como máximo. |
+| `stt_realtime` | `true` | Transcribir mientras se habla (Scribe v2 Realtime); si falla, Scribe por lotes. |
+| `stt_realtime_model` | `"scribe_v2_realtime"` | Modelo en tiempo real. |
+| `stt_realtime_timeout` | 5 | Segundos de espera del texto tras soltar la tecla antes de pasar a lotes. |
+| `voice_ack` | `true` | Acuse inmediato al enviar un dictado. |
+| `narrate_progress` | `"voice"` | Interjecciones y progreso: `voice` (turnos dictados), `always` u `off`. |
 | `cache_max_chars` | 160 | Frases hasta este largo se guardan en caché. |
 | `player` | `"auto"` | `mpv`, `ffplay` o `auto`. |
 
@@ -83,6 +103,7 @@ Variables de entorno:
 | `ELEVENLABS_API_KEY` | Clave (gana sobre `.env`). |
 | `ELEVENLABS_VOICE_ID`, `ELEVENLABS_MODEL_ID` | Reemplazan la voz o el modelo de la config. |
 | `ELEVENLABS_API_BASE` | Otra URL de la API (pruebas, proxy). |
+| `ELEVENLABS_WS_BASE` | Otra URL para Scribe en tiempo real (por defecto `wss://api.elevenlabs.io`). |
 | `TALKTOME_DISABLE` | Si existe, los hooks no hacen nada (lo usa el resumidor). |
 | `TALKTOME_STATE` | Carpeta de estado en lugar de `~/.talktome`. |
 | `TALKTOME_CONFIG` | Ruta del archivo de configuración. |
@@ -100,7 +121,10 @@ Variables de entorno:
 | `work(kind, payload_file, cfg)` | Worker: arma la frase y la dice, esperando su turno. |
 | `detail(cfg, session=None)` | Narra el detalle de la última respuesta de la sesión. |
 | `compose_reply(markdown, cfg, summarize=None)` | Qué decir de una respuesta (ver las tres capas en ARQUITECTURA). |
-| `is_repeat(prompt)` / `is_detail(prompt)` | ¿El mensaje completo es "repite"/"detalle"? |
+| `is_repeat(prompt)` / `is_detail(prompt)` / `is_stop(prompt)` | ¿El mensaje completo es "repite"/"detalle"/"calla"? |
+| `track(event, session)` / `claude_open(idle, grace)` / `start_listening()` | Sesiones abiertas y actividad; ¿sigue Claude Code en uso?; lanza la escucha si no corre. |
+| `mark_dictated(text)` / `was_dictated(prompt)` | La escucha anota lo que dictó; el hook `prompt` reconoce el turno por voz (una vez, hasta 30 s). |
+| `narrates(cfg, voice)` | ¿Acompañar este turno? Según `narrate_progress`, silencio y clave. |
 | `announces(cfg)` | ¿Está activo el distintivo de proyecto? |
 | `log(message)` | Una línea en `talktome.log`; rota a los 500 KB. |
 
@@ -108,6 +132,7 @@ Variables de entorno:
 
 | Función | Descripción |
 |---|---|
+| `cached(text, cfg)` / `prefetch(text, cfg)` | ¿Está `text` en caché con esta voz? / Sintetizarlo a la caché sin reproducirlo (avisos de error). |
 | `speak(text, cfg, keep=False, session=None, intro=None, wait=300)` | Espera el turno (hasta `wait` s), dice `intro(proyecto_anterior)` si devuelve texto y luego `text`. `False` si no consiguió el turno. |
 | `replay(cfg, session=None)` | Repite la última respuesta de la sesión (audio guardado si está completo). |
 | `claim(session=None)` | Registra el proceso como worker de la sesión y corta al anterior de esa sesión. Sin sesión: toma la palabra ya. |
@@ -144,10 +169,17 @@ Variables de entorno:
 | Módulo | API |
 |---|---|
 | `projects.py` | `identify(cwd, cfg) → (nombre, cfg)`, `root(cwd)`, `speakable_name(nombre)`. |
+| `persona.py` (dictado) | `ack(h)`, `thinking(h, tone, expressive)`, `activity(tool, input)` → read/edit/test/git/shell/web/agent/plan/other o `None`, `progress(kind, h)`. |
 | `deck.py` | `draw(nombre, opciones, fits)`, `waits(now)`, `first_time_today(clave, hoy)`, `invented()`, `add_invented(frases, keep)`. |
 | `summarizer.py` | `summarize(reply, cfg)`, `narrate(reply, spoken, cfg)`, `invent_lines(known, cfg, count)`; `""` si falla. |
-| `transcript.py` | `final_reply(path)`: texto final del último turno del asistente. |
+| `transcript.py` | `final_reply(path)`: texto final del último turno del asistente; `tool_calls(path, offset)` → herramientas nuevas y offset; `size(path)`. |
 | `tts.py` | `stream`, `wav`, `cache_path`, `design`, `save_voice`, `voices`, `subscription`; errores como `TTSError`. |
+| `stt.py` | `transcribe(audio, cfg, filename)` (Scribe, multipart), `clean(text)` (una línea sin etiquetas de sonido; `""` si no hay palabras), `multipart(fields, files)`. |
+| `listen.py` | `Listener(cfg, desk, transcribe, stream, hush, acknowledge, …).dictate()`: un dictado completo; `run()` los encadena; `serve(cfg, key)` es `escucha`; `running()` → pid de la escucha activa. |
+| `realtime.py` | `Stream(cfg)`: `feed(pcm)`, `finish(timeout)` → texto, `cancel()`; `url(cfg)`; `WebSocket` mínimo; `encode_frame` / `read_frame`. |
+| `mic.py` | Solo Windows, con `ctypes`: `Desk(key)` (tecla por gancho de teclado de bajo nivel, o hotkey si no se puede; ventana activa, `type_text`, `copy`, `beep`), `KeyWatcher`, `Recorder` (waveIn, 16 kHz mono en trozos de 100 ms, `start(on_chunk)`, `stop(path)` → WAV), `vk_code`, `key_events`. |
+| `alerts.py` | `classify(error)` → auth/quota/no_key/network/mic/elevated/player/crash; `report(kind, cfg, detail)` (nunca lanza); `line(kind, cfg)`; `missing(cfg)` / `warm(cfg)`: avisos en caché; `system_say(text)`: voz del sistema. |
+| `companion.py` | `accompany(cfg, session, transcript)`; `Companion.run()`: lee el transcript y habla con pausas crecientes (`gap(n)`), tono de interjección según la espera (`tone(n)`); `turn_done(session)`. |
 | `config.py` | `load()`, `save_voice_id(id)`, `set_muted(bool)`, `STATE_DIR`, `ROOT`, `DEFAULTS`. |
 
 ## Archivos de estado (`~/.talktome`)
@@ -164,6 +196,15 @@ Variables de entorno:
 | `payload-<tipo>-<ns>.json` | `hooks._enqueue` | Paso del hook al worker; se borra al leerlo. |
 | `last.wav` | `player` | Audio temporal de los reproductores sin streaming. |
 | `design/voz-N.mp3` | `cli design` | Candidatas de Voice Design. |
+| `listen.pid` | `listen.serve` | Escucha activa (evita dos que escriban todo dos veces). |
+| `dictado.wav` | `listen` / `cli oye` | Último dictado, para revisarlo con `oye dictado.wav`. |
+| `dictated.json` | `hooks.mark_dictated` | Texto y hora del último dictado; el hook `prompt` lo consume. |
+| `sessions/<id>/prompt-at` | hook `prompt` | Hora del último prompt, para medir el turno de Claude. |
+| `sessions/<id>/turn-done` | hook `stop` | El turno terminó: el acompañante se calla. |
+| `open-sessions/<id>` | hooks `session` / `end` | Sesiones de Claude Code abiertas. |
+| `claude-activity` | todos los hooks | Última actividad de Claude Code. |
+| `alerts.json` | `alerts.due` | Última vez que se dijo cada tipo de aviso. |
+| `listen-dozed` | `listen.serve` | La escucha se fue por inactividad; el próximo prompt la despierta. |
 | `sessions/<id>/project` | `player.remember_project` | Nombre hablado del proyecto. |
 | `sessions/<id>/worker.pid` | `player.claim` | Worker activo de esa sesión. |
 | `sessions/<id>/last-reply.txt` | `player` | Texto de la última respuesta dicha. |

@@ -21,7 +21,8 @@ STYLE_DST = CLAUDE_DIR / "output-styles" / "rachel.md"
 LEGACY_STYLE = CLAUDE_DIR / "output-styles" / "jarvis.md"
 STYLE_NAMES = {"Rachel", "Jarvis"}
 MARKER = "talktome.py"
-EVENTS = {"SessionStart": "session", "UserPromptSubmit": "prompt", "Notification": "notification", "Stop": "stop"}
+EVENTS = {"SessionStart": "session", "UserPromptSubmit": "prompt", "Notification": "notification", "Stop": "stop",
+          "SessionEnd": "end"}
 
 
 def _on_path(python):

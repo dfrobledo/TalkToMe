@@ -5,7 +5,9 @@ import json
 import sys
 import traceback
 
-from . import config, deck, hooks, lines, persona, player, projects, tts
+from pathlib import Path
+
+from . import alerts, companion, config, deck, hooks, lines, listen, mic, persona, player, projects, stt, tts
 from .player import LOG_FILE
 
 SAMPLE = (
@@ -39,10 +41,14 @@ DESIGN_TEXT = (
 )
 
 
-def _log_error():
+def _log_error(cfg=None):
+    """Log the exception being handled and, with a config, have Rachel report it."""
     config.STATE_DIR.mkdir(parents=True, exist_ok=True)
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(traceback.format_exc() + "\n")
+    if cfg is not None:
+        error = sys.exc_info()[1]
+        alerts.report(alerts.classify(error), cfg, str(error)[:200])
 
 
 def cmd_hook(args, cfg):
@@ -54,7 +60,7 @@ def cmd_hook(args, cfg):
     try:
         decision = hooks.handle(args.event, payload, cfg)
     except Exception:
-        _log_error()  # A voice failure must never break Claude Code.
+        _log_error(cfg)  # A voice failure must never break Claude Code.
         return 0
     if decision:
         print(json.dumps(decision, ensure_ascii=False))
@@ -65,7 +71,7 @@ def cmd_worker(args, cfg):
     try:
         hooks.work(args.kind, args.payload, cfg)
     except Exception:
-        _log_error()
+        _log_error(cfg)
     return 0
 
 
@@ -83,11 +89,49 @@ def cmd_repeat(args, cfg):
             print("Todavía no hay ninguna respuesta que repetir.")
     except Exception:
         if args.command == "_repeat":
-            _log_error()  # Detached: nobody is watching the console.
+            _log_error(cfg)  # Detached: nobody is watching the console.
         else:
             raise
     finally:
         player.release(session)
+    return 0
+
+
+def cmd_accompany(args, cfg):
+    try:
+        companion.accompany(cfg, args.session, args.transcript)
+    except Exception:
+        _log_error(cfg)  # Detached: nobody is watching the console.
+    return 0
+
+
+def cmd_prepare(args, cfg):
+    try:
+        made = alerts.warm(cfg)
+        if made:
+            hooks.log(f"avisos de error listos en caché: {made} nuevos")
+    except Exception:
+        _log_error()  # no report: ElevenLabs failing here is reported when it matters
+    return 0
+
+
+def cmd_alerts(args, cfg):
+    if args.prueba:
+        if args.prueba not in alerts.LINES:
+            print(f"Tipos: {', '.join(alerts.LINES)}", file=sys.stderr)
+            return 1
+        player.claim()
+        try:
+            player.speak(alerts.line(args.prueba, cfg), cfg)
+        finally:
+            player.release()
+        return 0
+    if args.preparar:
+        print(f"{alerts.warm(cfg)} avisos generados; el resto ya estaba en caché.")
+    for kind in alerts.LINES:
+        text = alerts.line(kind, cfg)
+        print(f"{'✓' if player.cached(text, cfg) else '·'} {kind:<11} {text}")
+    print("✓ = en caché con su voz (funciona aunque ElevenLabs falle). --preparar genera los que falten.")
     return 0
 
 
@@ -97,7 +141,7 @@ def cmd_detail(args, cfg):
         hooks.detail(cfg, session)
     except Exception:
         if args.command == "_detail":
-            _log_error()  # Detached: nobody is watching the console.
+            _log_error(cfg)  # Detached: nobody is watching the console.
         else:
             raise
     return 0
@@ -176,6 +220,22 @@ def cmd_doctor(args, cfg):
     print(f"Audio:      {audio or 'FALTA reproductor (instala mpv)'}")
     ok &= bool(audio)
     print(f"Silencio:   {'activado (talktome unmute)' if cfg['muted'] else 'no'}")
+    if mic.available():
+        try:
+            recorder = mic.Recorder()
+            recorder.start()
+            recorder.cancel()
+            state = "micrófono OK"
+        except mic.MicError as e:
+            state = f"FALLA el {e}"
+            ok = False
+        active = listen.running()
+        idle = "inactivo (arranca al abrir Claude Code)" if cfg["listen_on_start"] else "inactivo (talktome escucha)"
+        print(f"Dictado:    {state} · tecla {cfg['listen_key']} · {cfg['stt_model']} · "
+              f"{'tiempo real' if cfg['stt_realtime'] else 'por lotes'} · "
+              f"{f'escuchando (proceso {active})' if active else idle}")
+    else:
+        print("Dictado:    solo en Windows por ahora")
     if cfg["api_key"]:
         try:
             cmd_quota(args, cfg)
@@ -211,6 +271,59 @@ def cmd_lines(args, cfg):
     return 0
 
 
+def cmd_listen(args, cfg):
+    if args.detener:
+        print("Escucha detenida." if listen.stop_listening() else "No había ninguna escucha activa.")
+        return 0
+    if not mic.available():
+        print("El dictado por voz funciona en Windows por ahora.", file=sys.stderr)
+        return 1
+    try:
+        if args.fondo:
+            listen.serve(cfg, key=args.tecla, out=lambda text: None, background=True)
+        else:
+            listen.serve(cfg, key=args.tecla)
+    except (mic.MicError, ValueError) as e:
+        if args.fondo:
+            hooks.log(f"escucha en segundo plano: {e}")
+            if not listen.running():  # another one taking over is no error
+                kind = alerts.classify(e)
+                alerts.report(kind if kind != "crash" else "listen", cfg, str(e))
+        else:
+            print(e, file=sys.stderr)
+            return 1
+    except Exception:
+        if not args.fondo:
+            raise
+        _log_error(cfg)  # Detached: nobody is watching the console.
+    return 0
+
+
+def cmd_hear(args, cfg):
+    """Transcribe without typing anything: a file, or the microphone until Enter."""
+    if args.archivo:
+        path = Path(args.archivo)
+        audio = path.read_bytes()
+    elif mic.available():
+        recorder = mic.Recorder()
+        try:
+            recorder.start()
+            input("Hable ahora; pulse Enter para terminar...")
+            path = listen.LAST_AUDIO
+            audio = recorder.stop(path)
+        except mic.MicError as e:
+            recorder.cancel()
+            print(e, file=sys.stderr)
+            return 1
+    else:
+        print("Sin Windows no puedo grabar: pase un archivo de audio (talktome oye voz.wav).", file=sys.stderr)
+        return 1
+    print("Transcribiendo...")
+    text = stt.clean(stt.transcribe(audio, cfg, filename=path.name))
+    print(f"» {text}" if text else "(no se entendieron palabras)")
+    return 0
+
+
 def cmd_stop(args, cfg):
     player.stop()
     return 0
@@ -220,7 +333,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(prog="talktome", description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("hook", help="usado por Claude Code")
-    p.add_argument("event", choices=["stop", "notification", "session", "prompt"])
+    p.add_argument("event", choices=["stop", "notification", "session", "prompt", "end"])
     p.set_defaults(fn=cmd_hook)
     p = sub.add_parser("_speak")
     p.add_argument("kind")
@@ -236,6 +349,15 @@ def main(argv=None):
     p.add_argument("session", nargs="?")
     p.add_argument("cwd", nargs="?")
     p.set_defaults(fn=cmd_detail)
+    sub.add_parser("_prepara").set_defaults(fn=cmd_prepare)
+    p = sub.add_parser("avisos", aliases=["alerts"], help="avisos de error de Rachel: cuáles hay y si están en caché")
+    p.add_argument("--preparar", action="store_true", help="generar ya los que falten en caché")
+    p.add_argument("--prueba", metavar="TIPO", help="escuchar uno (auth, mic, network...)")
+    p.set_defaults(fn=cmd_alerts)
+    p = sub.add_parser("_acompana")
+    p.add_argument("session")
+    p.add_argument("transcript")
+    p.set_defaults(fn=cmd_accompany)
     p = sub.add_parser("say", help="dice un texto (o una frase de prueba)")
     p.add_argument("text", nargs="*")
     p.set_defaults(fn=cmd_say)
@@ -251,6 +373,14 @@ def main(argv=None):
     p = sub.add_parser("frases", aliases=["lines"], help="frases de Rachel, incluidas las inventadas")
     p.add_argument("--inventa", action="store_true", help="pedirle a Claude frases nuevas ahora")
     p.set_defaults(fn=cmd_lines)
+    p = sub.add_parser("escucha", aliases=["listen"], help="dictado: mantenga una tecla, hable y se envía a Claude")
+    p.add_argument("--tecla", help="tecla para hablar (por defecto la de la config, F9)")
+    p.add_argument("--fondo", action="store_true", help=argparse.SUPPRESS)  # launched by SessionStart
+    p.add_argument("--detener", action="store_true", help="detiene la escucha en segundo plano")
+    p.set_defaults(fn=cmd_listen)
+    p = sub.add_parser("oye", aliases=["hear"], help="transcribe sin enviar: un archivo o el micrófono")
+    p.add_argument("archivo", nargs="?", help="audio a transcribir (sin él, graba hasta Enter)")
+    p.set_defaults(fn=cmd_hear)
     sub.add_parser("stop", help="calla la frase en curso").set_defaults(fn=cmd_stop)
     sub.add_parser("mute", help="silencia a Rachel").set_defaults(fn=cmd_mute)
     sub.add_parser("unmute", help="reactiva la voz").set_defaults(fn=cmd_mute)

@@ -45,9 +45,32 @@ DEFAULTS = {
     # Folder name → spoken name, or {"name": ..., "voice_id": ..., ...}
     # for a project with its own name, voice or honorific.
     "projects": {},
+    # Rachel says out loud what went wrong (her voice, or the system's when
+    # ElevenLabs is the problem), at most once every few minutes per kind.
+    "report_errors": True,
     "greet_on_start": True,
     "speak_notifications": True,
     "interrupt_on_prompt": True,
+    # Dictation (talktome escucha): hold this key, speak, release to send.
+    "listen_key": "F9",
+    # Start listening in the background with Claude Code (Windows), and stop
+    # once every session closed or after this long without any activity.
+    "listen_on_start": True,
+    "listen_idle_minutes": 120,
+    "listen_min_seconds": 0.4,
+    "listen_max_seconds": 120,
+    # ElevenLabs Scribe; keyterms: words it should expect (names, jargon).
+    "stt_model": "scribe_v2",
+    "stt_keyterms": [],
+    # Transcribe while you speak (Scribe v2 Realtime); batch Scribe if it fails.
+    "stt_realtime": True,
+    "stt_realtime_model": "scribe_v2_realtime",
+    "stt_realtime_timeout": 5,
+    # "Entendido, señor." the moment a dictation is sent.
+    "voice_ack": True,
+    # Company while Claude works (thinking sounds, what it is doing):
+    # "voice" for turns started by dictation, "always", or "off".
+    "narrate_progress": "voice",
     "cache_max_chars": 160,
     "player": "auto",
 }

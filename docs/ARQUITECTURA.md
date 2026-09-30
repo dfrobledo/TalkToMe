@@ -19,6 +19,7 @@ Este documento explica cómo está armado por dentro. Para instalarlo y usarlo, 
 11. [Instalación en Claude Code](#11-instalación-en-claude-code)
 12. [Errores y diagnóstico](#12-errores-y-diagnóstico)
 13. [Cómo extenderlo](#13-cómo-extenderlo)
+14. [Dictado: Rachel escucha](#14-dictado-rachel-escucha)
 
 ---
 
@@ -46,6 +47,7 @@ flowchart LR
         H2["UserPromptSubmit"]
         H3["Notification"]
         H4["Stop"]
+        H5["SessionEnd"]
     end
     CC --> Hooks
     Hooks -- "stdin JSON" --> HK["talktome.py hook &lt;evento&gt;"]
@@ -60,14 +62,15 @@ flowchart LR
     W <--> ST[("~/.talktome<br/>estado, caché, log")]
 ```
 
-Los cuatro eventos que TalkToMe escucha:
+Los cinco eventos que TalkToMe escucha:
 
 | Evento | Handler | Efecto |
 |---|---|---|
-| `SessionStart` | `hooks.handle("session")` | Encola el saludo, con el nombre del proyecto. |
-| `UserPromptSubmit` | `hooks.handle("prompt")` | Calla a Rachel en esa terminal; intercepta "repite" y "detalle". |
+| `SessionStart` | `hooks.handle("session")` | Encola el saludo, con el nombre del proyecto, y arranca la escucha en segundo plano si no está corriendo. |
+| `UserPromptSubmit` | `hooks.handle("prompt")` | Calla a Rachel en esa terminal; intercepta "repite", "detalle" y "calla"; acompaña los turnos dictados. |
 | `Notification` | `hooks.handle("notification")` | Permisos, pedidos de atención y recordatorios de espera. |
 | `Stop` | `hooks.handle("stop")` | Encola la respuesta final para decirla. |
+| `SessionEnd` | `hooks.handle("end")` | Marca la sesión como cerrada: sin sesiones abiertas, la escucha se va. |
 
 ## 3. Módulos y dependencias
 
@@ -117,6 +120,10 @@ En verde, los módulos **puros**: sin red, audio ni estado global, y por eso los
 | `player.py` | Reproduce audio, lanza workers, gestiona el turno de voz entre sesiones, la interrupción y la memoria de cada sesión. |
 | `tts.py` | Cliente de ElevenLabs: streaming, WAV, caché, Voice Design, voces y cuota. |
 | `config.py` | Valores por defecto + `talktome.config.json` + `.env` + variables de entorno. |
+| `listen.py` | Dictado (`escucha`): tecla, grabación, transcripción y escritura en la terminal (sección 14). |
+| `mic.py` | Windows con `ctypes`: gancho de teclado, micrófono `waveIn`, `SendInput`, portapapeles. |
+| `stt.py` · `realtime.py` | Scribe por lotes (multipart) y en tiempo real (WebSocket propio). |
+| `companion.py` | Interjecciones y progreso mientras Claude trabaja en un turno dictado. |
 
 ## 4. Del hook al altavoz: una respuesta
 
@@ -385,7 +392,7 @@ flowchart LR
 
 ## 11. Instalación en Claude Code
 
-`install.py` edita `~/.claude/settings.json` (con copia `settings.json.bak-talktome`) y es idempotente: primero quita cualquier hook suyo (los reconoce por `talktome.py` en el comando) y luego añade los cuatro.
+`install.py` edita `~/.claude/settings.json` (con copia `settings.json.bak-talktome`) y es idempotente: primero quita cualquier hook suyo (los reconoce por `talktome.py` en el comando) y luego añade los cinco.
 
 ```mermaid
 flowchart TD
@@ -393,7 +400,7 @@ flowchart TD
     B --> X["quita hooks previos de TalkToMe"]
     X --> U{"--uninstall"}
     U -- sí --> U1["quita outputStyle Rachel y rachel.md"]
-    U -- no --> H["añade SessionStart, UserPromptSubmit,<br/>Notification, Stop (timeout 10 s)"]
+    U -- no --> H["añade SessionStart, UserPromptSubmit,<br/>Notification, Stop, SessionEnd (timeout 10 s)"]
     H --> S["copia rachel.md a ~/.claude/output-styles"]
     S --> NS{"--no-style"}
     NS -- no --> A["outputStyle = Rachel"]
@@ -409,7 +416,9 @@ El comando del hook está pensado para funcionar igual en Git Bash y en PowerShe
 | Excepciones de hooks y workers | `cli._log_error` → traza completa en `talktome.log`. El hook sale con 0. |
 | Una línea por decisión | `hooks.log`: largo en pantalla y hablado, proyecto, si hubo resumidor y cuánto tardó, avisos omitidos. |
 | Fallas del resumidor | `summarizer._log`: código de salida y los primeros 300 caracteres del error. |
-| Autodiagnóstico | `talktome.py doctor`: config, clave enmascarada y su origen, reproductor, silencio, cuota. |
+| Autodiagnóstico | `talktome.py doctor`: config, clave enmascarada y su origen, reproductor, silencio, micrófono, escucha, cuota. |
+| Avisos en voz alta | `alerts.report`: cada error de un worker, de la escucha o del resumidor se clasifica (`alerts.classify`) y Rachel dice qué componente revisar, como mucho una vez cada 10 minutos por tipo. |
+| Avisos sin ElevenLabs | Al abrir sesión, `_prepara` sintetiza los avisos en caché (`alerts.warm`). Si falla la clave, los créditos o la red, ella los dice desde la caché; si no están, habla la voz del sistema (`System.Speech` en Windows, `say` en macOS, `spd-say`/`espeak` en Linux). |
 | Evitar bucles | `TALKTOME_DISABLE=1` en el entorno del `claude -p` interno: sus propios hooks no hacen nada. Además corre con `disableAllHooks`. |
 
 ## 13. Cómo extenderlo
@@ -422,7 +431,7 @@ El comando del hook está pensado para funcionar igual en Git Bash y en PowerShe
 | Otro reproductor | `STREAM_PLAYERS` o `FILE_PLAYERS` en `player.py`. |
 | Otra palabra de comando como "repite" | Un conjunto como `REPEAT_WORDS` + rama en `handle` que devuelva `block`. |
 | Una voz por proyecto | Sin código: `projects` en `talktome.config.json`. |
-| Fase 2, dictado por voz | Un nuevo productor de prompts; el lado de la voz (sesiones, turnos, interrupción) ya está listo para varias fuentes. |
+| Otra palabra que el dictado resuelva sin Claude | Como `STOP_WORDS` en `hooks.py` + una rama en `Listener.dictate`. |
 
 ```bash
 python -m unittest -v   # sin red ni audio
@@ -433,3 +442,80 @@ python -m unittest -v   # sin red ni audio
 | `tests/test_speech.py` | Limpieza de markdown, resumen hablado, `compose_reply`, "repite", "detalle", turnos, transcript. |
 | `tests/test_lines.py` | Mazos, escalada, hora del día, fechas especiales, frases inventadas. |
 | `tests/test_sessions.py` | Aislamiento por sesión, turno atómico, interrupción por terminal, distintivos, proyectos. |
+| `tests/test_listen.py` | Dictado con un escritorio simulado, tiempo real y respaldo por lotes, WebSocket, "calla", petición a Scribe, limpieza, teclas y estructuras de Windows. |
+| `tests/test_companion.py` | Tipos de actividad, frases, lectura incremental del transcript, pausas del acompañante, detección del turno por voz, tiempos. |
+
+## 14. Dictado: Rachel escucha
+
+`talktome.py escucha` es un proceso aparte que corre en su propia consola. No es un hook: produce prompts como si usted los tecleara, y por eso todo lo de Claude Code (hooks, "repite", "detalle", permisos) funciona igual que con el teclado.
+
+```mermaid
+sequenceDiagram
+    participant U as Usted
+    participant L as escucha (listen.py)
+    participant EL as Scribe Realtime
+    participant T as Terminal de Claude Code
+    participant C as Acompañante (companion.py)
+    U->>L: mantiene F9 (gancho de teclado)
+    L->>L: recuerda la ventana · graba (waveIn) · bip · calla a Rachel en paralelo
+    L->>EL: abre el WebSocket mientras ya graba
+    loop mientras habla
+        L->>EL: PCM 16 kHz cada 100 ms
+    end
+    U->>L: suelta F9
+    L->>EL: commit
+    EL-->>L: committed_transcript (si falla: Scribe por lotes)
+    alt "calla", "silencio"…
+        L->>L: nada más: ya se calló al presionar
+    else la ventana sigue al frente
+        L->>L: anota el dictado (dictated.json)
+        L->>T: SendInput Unicode + Enter
+        L->>U: "Entendido, señor." (worker, caché)
+        T->>C: hook prompt: turno por voz → _acompana
+        loop hasta el hook Stop (turn-done)
+            C->>C: lee herramientas nuevas del transcript
+            C->>U: "Mmm, a ver..." · "Corriendo las pruebas..." (pausas crecientes)
+        end
+    else la ventana cambió
+        L->>L: texto al portapapeles + bip grave
+    end
+```
+
+Decisiones:
+
+- **Sin dependencias**: la tecla (gancho `WH_KEYBOARD_LL`), el micrófono (`waveIn` de `winmm`), el teclado (`SendInput` con `KEYEVENTF_UNICODE`) y el WebSocket de Scribe (`socket` + `ssl`) usan solo `ctypes` y la biblioteca estándar. Por eso el dictado es solo para Windows por ahora.
+- **La tecla por gancho de teclado**: Windows avisa exactamente cuándo baja y cuándo sube la tecla, y el gancho se la traga, así que no llega a la terminal (F9 escribiría una secuencia de escape en el prompt). Una pulsación más corta que el sondeo igual cuenta. Si el gancho no se puede instalar, se usa `RegisterHotKey` + `GetAsyncKeyState`.
+- **Primero el micrófono**: al presionar se abre `waveIn` y suena el bip; callar a Rachel (`taskkill`, lento en Windows) va en un hilo aparte para no comerse las primeras palabras.
+- **Transcribir mientras habla**: el WebSocket se conecta en paralelo; el audio grabado mientras tanto se acumula y sale de una vez. Al soltar solo falta el `commit`. Cualquier error del tiempo real (conexión, clave, tiempo de espera) cae a Scribe por lotes con el WAV completo.
+- **El Enter aparte**: el texto y el Enter van en dos ráfagas separadas por 150 ms, para que la terminal no tome el Enter como parte de un pegado.
+- **La ventana de origen**: se escribe en la ventana que estaba al frente al presionar la tecla. Si al terminar de transcribir ya no lo está y Windows no deja traerla de vuelta, el texto queda en el portapapeles en vez de ir a parar a otra aplicación.
+- **"Calla" no llega a Claude**: se resuelve en local. Escrito a mano, el hook `prompt` también lo bloquea.
+- **Probado sin Windows**: `Listener` recibe el escritorio (`mic.Desk`), la transcripción y el stream como dependencias; las pruebas usan un escritorio simulado con reloj falso y un servidor de Scribe falso.
+
+### Compañía mientras Claude trabaja
+
+Un silencio largo después de hablar se siente como si nadie hubiera oído. Por eso, en los turnos que empiezan por voz:
+
+1. **Acuse**: la escucha lanza un worker con una frase de `lines.ACKS` apenas escribe el prompt.
+2. **Acompañante**: el hook `prompt` reconoce el dictado (`was_dictated`) y lanza `_acompana`, que reclama la sesión como su worker. Cada medio segundo lee las herramientas nuevas del transcript (`transcript.tool_calls`) y, cuando pasó la pausa que toca, dice algo:
+   - si Claude empezó otro tipo de trabajo (`persona.activity`), una frase de `lines.PROGRESS`;
+   - si no, una interjección de `lines.THINKING`, cuyo tono sube con la espera: sonidos, luego cavilaciones, luego "sigo aquí". Con `eleven_v3` se suman las de `THINKING_V3`, con etiquetas como `[sighs]`.
+3. **Pausas crecientes**: 5 s, luego ×1,35 cada vez, con tope de 30 s. Si alguien más está hablando, calla.
+4. **Fin**: el hook `Stop` escribe `turn-done` y el worker de la respuesta reclama la sesión, lo que mata al acompañante. Si el acompañante llega tarde y el turno ya terminó, no reclama nada, para no cortar la respuesta.
+
+Nada de esto toca a Claude: solo lee el transcript, así que no agrega latencia ni cambia el análisis.
+
+### Arranque automático
+
+La escucha es un proceso aparte, y nadie quiere abrir una consola más. Por eso el hook `SessionStart` la lanza sin ventana (`escucha --fondo`, con `player.spawn`) cuando no hay una corriendo. `listen.pid` se crea de forma atómica: si dos terminales abren a la vez, arranca una sola.
+
+Se tiene que ir sola, porque mientras corre se queda con F9 en todo Windows. Cada hook anota actividad (`claude-activity`), y `SessionStart` y `SessionEnd` mantienen `open-sessions/`. Cada 5 segundos la escucha pregunta `hooks.claude_open()`:
+
+- **Sin sesiones abiertas**, pasado un minuto de gracia por si abre otra, termina.
+- **Sin actividad en `listen_idle_minutes`** (2 horas por defecto; cubre terminales cerradas a la fuerza, que no avisan con `SessionEnd`), también. Si todavía había sesiones abiertas, deja `listen-dozed` y el próximo prompt la despierta.
+
+`escucha --detener` la termina a mano; `"listen_on_start": false` la apaga.
+
+### Tiempos
+
+`talktome.log` anota una línea por dictado ("2.1 s de voz → 48 car., texto 0.3 s después de soltar (en tiempo real)") y otra por respuesta ("tiempos: Claude 23.4 s · voz 1.1 s después"), a partir de `prompt-at`, la hora del `Stop` y `player.first_sound`.

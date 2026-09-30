@@ -137,3 +137,101 @@ SESSION_OPENINGS = [
     ("Otra noche en {p}.", 1, "night"),
     ("Buen día para {p}.", 1, "day"),
 ]
+
+# Said the moment a dictation is sent: Rachel heard you, Claude is on it.
+ACKS = [
+    ("Entendido, {h}.", 1, None),
+    ("Enseguida, {h}.", 1, None),
+    ("Con gusto, {h}.", 1, None),
+    ("A la orden, {h}.", 1, None),
+    ("Anotado.", 1, None),
+    ("Recibido. Déjeme pensarlo.", 1, None),
+    ("Ya lo pienso, {h}.", 1, None),
+    ("Mmm, buena pregunta.", 1, None),
+    ("Déjeme ver, {h}.", 1, None),
+    ("Entendido. Deme un momento.", 1, None),
+    ("Me pongo en eso, {h}.", 1, None),
+]
+
+# While Claude thinks: the small sounds of someone putting ideas together,
+# so the silence reads as a mind at work. Tone climbs with the wait:
+# 1 a sound, 2 a musing, 3 a word to say she has not left.
+THINKING = [
+    ("Mmm...", 1, None),
+    ("Mmm, a ver...", 1, None),
+    ("Ajá...", 1, None),
+    ("Veamos...", 1, None),
+    ("A ver, a ver...", 1, None),
+    ("Hmm...", 1, None),
+    ("Ya veo...", 1, None),
+    ("Ajá... sí.", 1, None),
+    ("Mmm... déjeme pensar.", 2, None),
+    ("Hmm. Curioso.", 2, None),
+    ("Bueno, bueno...", 2, None),
+    ("Esto tiene su gracia...", 2, None),
+    ("Déjeme hilar esto...", 2, None),
+    ("Uf... a ver por dónde le entro.", 2, None),
+    ("Mmm, interesante...", 2, None),
+    ("Sigo hilando, {h}. No me he ido.", 3, None),
+    ("Esto pide un poco más de cabeza, {h}. Ya casi.", 3, None),
+    ("Paciencia, {h}. Las buenas ideas llegan despacio.", 3, None),
+    ("Todavía en ello, {h}. Vale la pena hacerlo bien.", 3, None),
+]
+
+# Only for eleven_v3, which performs the tags instead of reading them.
+THINKING_V3 = [
+    ("[thoughtful] Mmm...", 1, None),
+    ("[sighs] A ver...", 1, None),
+    ("[exhales softly] Hmm...", 1, None),
+    ("[softly] Ajá...", 1, None),
+    ("[thoughtful] Mmm... déjeme pensar.", 2, None),
+    ("[sighs] Bueno, bueno...", 2, None),
+]
+
+# What Claude is doing, from the tools it calls. Keys: persona.activity().
+PROGRESS = {
+    "read": [
+        ("Revisando el código...", 1, None),
+        ("Leyendo con lupa, {h}.", 1, None),
+        ("Buscando entre los archivos...", 1, None),
+        ("Hojeando el expediente...", 1, None),
+    ],
+    "edit": [
+        ("Haciendo cambios...", 1, None),
+        ("Con el bisturí en la mano, {h}.", 1, None),
+        ("Reescribiendo un par de cosas...", 1, None),
+        ("Ajustando piezas...", 1, None),
+    ],
+    "test": [
+        ("Corriendo las pruebas...", 1, None),
+        ("Las pruebas están en marcha, {h}.", 1, None),
+        ("Veamos si las pruebas opinan lo mismo...", 1, None),
+    ],
+    "git": [
+        ("Consultando a git...", 1, None),
+        ("Revisando la historia del repositorio...", 1, None),
+    ],
+    "shell": [
+        ("Ejecutando un comando...", 1, None),
+        ("Manos a la terminal, {h}.", 1, None),
+        ("Probando algo en la consola...", 1, None),
+    ],
+    "web": [
+        ("Consultando afuera, {h}.", 1, None),
+        ("Buscando en la red...", 1, None),
+        ("Preguntándole a la ciudad...", 1, "night"),
+    ],
+    "agent": [
+        ("Mandé a un replicante a investigar.", 1, None),
+        ("Pedí refuerzos, {h}.", 1, None),
+        ("Tengo a un ayudante en eso...", 1, None),
+    ],
+    "plan": [
+        ("Ordenando el plan...", 1, None),
+        ("Haciendo la lista de pendientes...", 1, None),
+    ],
+    "other": [
+        ("Trabajando en ello...", 1, None),
+        ("Sigo en ello, {h}.", 1, None),
+    ],
+}
