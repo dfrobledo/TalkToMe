@@ -190,7 +190,21 @@ def cmd_design(args, cfg):
 
 
 def cmd_voices(args, cfg):
-    for v in sorted(tts.voices(cfg), key=lambda v: v.get("name", "")):
+    voices = tts.voices(cfg)
+    if args.usar:
+        wanted = args.usar.strip().lower()
+        match = [v for v in voices if v["voice_id"] == args.usar or v.get("name", "").strip().lower() == wanted]
+        if not match:
+            print(f"No hay ninguna voz llamada «{args.usar}» en su biblioteca. Estas son las que tiene:", file=sys.stderr)
+        elif len(match) > 1:
+            print(f"Hay {len(match)} voces llamadas «{args.usar}»; elija una por su ID:", file=sys.stderr)
+            voices = match
+        else:
+            path = config.save_voice_id(match[0]["voice_id"])
+            print(f"Voz «{match[0].get('name')}» ({match[0]['voice_id']}) activada en {path.name}.")
+            print("Pruébela: python talktome.py say")
+            return 0
+    for v in sorted(voices, key=lambda v: v.get("name", "")):
         labels = v.get("labels") or {}
         tags = ", ".join(str(labels[k]) for k in ("gender", "accent", "age", "descriptive") if labels.get(k))
         print(f"{v['voice_id']}  {v.get('name', ''):<28} {tags}")
@@ -207,6 +221,9 @@ def cmd_quota(args, cfg):
 def cmd_doctor(args, cfg):
     ok = True
     print(f"Config:     voz {cfg['voice_id']} · modelo {cfg['model_id']} · modo {cfg['mode']}")
+    if cfg["voice_id"] == config.DEFAULTS["voice_id"]:
+        # Lily is only a stand-in: British, so her Spanish sounds foreign.
+        print("            Es la voz comodín (Lily). ¿Y la suya? python talktome.py voices --usar Rachel")
     key = cfg["api_key"]
     if not key:
         print("API key:    FALTA (crea .env con ELEVENLABS_API_KEY)")
@@ -309,7 +326,7 @@ def cmd_wake(args, cfg):
             wake.install(cfg)
         except Exception as e:
             print(f"No se pudo instalar: {e}", file=sys.stderr)
-            print(f"Manual: pip install vosk, y descomprima {wake.MODEL_URL} en {wake.model_path(cfg).parent}",
+            print(f"Manual: pip install vosk, y descomprima {wake.MODEL_URL} en {wake.model_path().parent}",
                   file=sys.stderr)
             return 1
         print("Abra una sesión nueva de Claude Code (o reinicie la escucha) y diga «Rachel».")
@@ -318,8 +335,7 @@ def cmd_wake(args, cfg):
     if not args.prueba:
         state = "lista" if wake.enabled(cfg) else ("apagada en la config" if ready else why)
         print(f"Activación por voz: {state}")
-        print(f"  Palabras: {', '.join(dict.fromkeys(wake.WAKE_WORDS + list(cfg.get('wake_words') or [])))}")
-        print("  Pruebe qué oye: python talktome.py despierta --prueba")
+        print("  Pruebe si la oye: python talktome.py despierta --prueba")
         return 0 if ready else 1
     if not ready:
         print(f"Activación por voz: {why}", file=sys.stderr)
@@ -329,18 +345,16 @@ def cmd_wake(args, cfg):
         return 1
     import queue
 
-    words = list(dict.fromkeys(wake.WAKE_WORDS + list(cfg.get("wake_words") or [])))
-    spotter = wake.VoskSpotter(wake.model_path(cfg))
+    spotter = wake.VoskSpotter.for_config(cfg)
     chunks = queue.Queue()
     recorder = mic.Recorder()
     recorder.start(on_chunk=chunks.put, keep=False)
-    print("Hable (Ctrl+C para salir). Diga «Rachel» y vea qué entiende el reconocedor local.")
-    print("Si su nombre sale escrito de otra forma, agréguela a \"wake_words\" en la config.")
+    print("Hable (Ctrl+C para salir). Diga «Rachel», y también otras frases: solo su nombre debe marcarse.")
     try:
         while True:
             kind, text = spotter.feed(chunks.get())
             if kind == "final" and text:
-                called = "  ← ¡la llamó!" if wake.find_wake(wake.normalize(text).split(), words) else ""
+                called = "  ← ¡la llamó!" if wake.find_wake(wake.normalize(text).split()) else ""
                 print(f"\r» {text}{called}".ljust(70))
             elif text:
                 print(f"\r  {text[-66:]}".ljust(70), end="", flush=True)
@@ -419,7 +433,9 @@ def main(argv=None):
     p.add_argument("--name", default="Rachel", help="nombre en tu biblioteca de ElevenLabs")
     p.add_argument("--no-play", action="store_true", help="solo guardar los .mp3")
     p.set_defaults(fn=cmd_design)
-    sub.add_parser("voices", help="lista tus voces de ElevenLabs").set_defaults(fn=cmd_voices)
+    p = sub.add_parser("voices", aliases=["voces"], help="lista tus voces de ElevenLabs")
+    p.add_argument("--usar", metavar="NOMBRE", help="activa una voz de su biblioteca por nombre o ID (p. ej. Rachel)")
+    p.set_defaults(fn=cmd_voices)
     sub.add_parser("quota", help="caracteres disponibles").set_defaults(fn=cmd_quota)
     sub.add_parser("doctor", help="verifica la instalación").set_defaults(fn=cmd_doctor)
     p = sub.add_parser("frases", aliases=["lines"], help="frases de Rachel, incluidas las inventadas")
@@ -431,7 +447,7 @@ def main(argv=None):
     p.add_argument("--detener", action="store_true", help="detiene la escucha en segundo plano")
     p.set_defaults(fn=cmd_listen)
     p = sub.add_parser("despierta", aliases=["wake"], help="activación por voz: diga «Rachel»")
-    p.add_argument("--instalar", action="store_true", help="instala Vosk y el modelo de español (~40 MB)")
+    p.add_argument("--instalar", action="store_true", help="instala Vosk y su modelo pequeño (~40 MB)")
     p.add_argument("--prueba", action="store_true", help="muestra en vivo lo que oye el reconocedor local")
     p.set_defaults(fn=cmd_wake)
     p = sub.add_parser("oye", aliases=["hear"], help="transcribe sin enviar: un archivo o el micrófono")

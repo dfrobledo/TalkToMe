@@ -72,7 +72,7 @@ Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener e
 | `python talktome.py detalle` | Narra el detalle de la última respuesta desde la terminal |
 | `python talktome.py say "texto"` | Decir algo (sin texto: frase de prueba) |
 | `python talktome.py design` | Crear su voz con Voice Design (ver abajo) |
-| `python talktome.py voices` | Listar tus voces con su ID |
+| `python talktome.py voices [--usar NOMBRE]` | Listar tus voces con su ID |
 | `python talktome.py quota` | Caracteres disponibles en tu plan |
 | `python talktome.py frases` | Ver el banco de frases y las que inventó Claude (`--inventa`: pedir nuevas ya) |
 | `python talktome.py escucha` | Dictado a mano (normalmente arranca solo con Claude Code); `--detener` termina el de fondo |
@@ -102,7 +102,7 @@ Un detalle largo puede ocupar unos 2.500 caracteres de ElevenLabs (unos tres min
 ## Llámala por su nombre (en desarrollo)
 
 ```powershell
-python talktome.py despierta --instalar    # una vez: Vosk y su modelo de español (~40 MB)
+python talktome.py despierta --instalar    # una vez: Vosk y su modelo pequeño (~40 MB)
 ```
 
 Di **"Rachel"** y te contesta. Puedes darle la orden de dos formas:
@@ -117,7 +117,7 @@ Sus respuestas salen del universo Blade Runner. Casi siempre son cortas ("Dígam
 - **Interrumpirla**: si está hablando y dices "Rachel", se calla al instante. "Rachel, calla" solo la calla. "Rachel… nada, olvídalo" → "Olvidado, señor. Como lágrimas en la lluvia."
 - **Su propia voz no la despierta**: mientras dice algo que contiene su nombre, no se escucha a sí misma.
 - **Si no dices nada** después de que te conteste: "Será en otro momento, señor."
-- **Calibrar**: `python talktome.py despierta --prueba` muestra en vivo lo que entiende el reconocedor local. Si tu forma de decir "Rachel" sale escrita distinto, agrégala a `"wake_words"`.
+- **Su nombre, a la inglesa**: el reconocedor local usa el modelo pequeño de inglés, restringido a una sola palabra, "Rachel". Todo lo demás lo oye como "otra cosa"; tu orden en español la transcribe Scribe, como siempre. `python talktome.py despierta --prueba` muestra en vivo si reconoce tu "Rachel".
 - Se apaga con `"wake": false`. Queda activa sola en cuanto Vosk y el modelo están instalados (`"wake": "auto"`).
 
 ## Háblale: dictado con una tecla
@@ -200,7 +200,10 @@ Saludos, avisos de permiso y recordatorios de espera salen de un banco de frases
 
 Todas caben en la caché: cada frase gasta caracteres de ElevenLabs solo la primera vez que se dice.
 
-## Configuración (`talktome.config.json`)
+## Configuración
+
+`talktome.config.json` trae los valores del proyecto. **Tus cambios van en `talktome.local.json`** (mismo formato, solo las claves que cambies): git lo ignora, así que ningún `pull`, `checkout` ni `reset` los toca. `design` y `voices --usar` guardan tu voz ahí.
+
 
 | Clave | Valor por defecto | Notas |
 |---|---|---|
@@ -223,7 +226,7 @@ Todas caben en la caché: cada frase gasta caracteres de ElevenLabs solo la prim
 | `listen_on_start` | `true` | Escuchar en segundo plano mientras Claude Code esté abierto |
 | `report_errors` | `true` | Rachel dice en voz alta qué falló y qué revisar |
 | `wake` | `"auto"` | Llamarla por su nombre: `auto` (si Vosk está instalado), `true` o `false` |
-| `wake_words` | `[]` | Otras formas en que el reconocedor escribe "Rachel" |
+| `wake_min_conf` | 0.6 | Qué tan seguro debe estar el reconocedor de haber oído su nombre |
 | `wake_timeout` · `wake_silence` | 6 · 1.2 | Segundos para empezar la orden tras su respuesta, y de silencio que la terminan |
 | `wake_flavor` | 0.3 | Qué tan seguido su respuesta es un guiño a las películas |
 | `stt_model` | `"scribe_v2"` | Modelo de Speech-to-Text de ElevenLabs |
@@ -270,8 +273,9 @@ El dictado usa Scribe, que ElevenLabs cobra por minuto de audio (solo mientras m
 | Sale un bip medio y no se envía nada | La pulsación fue demasiado corta (menos de `listen_min_seconds`). Mantén la tecla mientras hablas. |
 | El texto quedó en el portapapeles | Cambiaste de ventana mientras transcribía; pégalo con Ctrl+V. Si pasa siempre en una terminal, puede que corra como administrador: Rachel te lo dice. |
 | El dictado se siente lento | En `talktome.log`, la línea `dictado:` dice cuánto tardó el texto y si fue "en tiempo real" o "por lotes". Si siempre es por lotes, la línea anterior dice por qué falló el tiempo real. |
-| Dices "Rachel" y no contesta | `python talktome.py despierta --prueba`: si tu "Rachel" sale escrito de otra forma (por ejemplo "reiche"), agrégala a `wake_words`. `doctor` muestra si Vosk y el modelo están listos. |
-| Se activa sola | Alguien dijo algo parecido a su nombre al empezar una frase. Quita esa variante de `wake_words` o baja el volumen de los parlantes. |
+| Rachel cambió de voz (suena británica o española) | Volvió la voz comodín (Lily): tu ID de voz se perdió de la config. `python talktome.py voices --usar Rachel` la recupera de tu biblioteca y la guarda en `talktome.local.json`. |
+| Dices "Rachel" y no contesta | `python talktome.py despierta --prueba`: si tu "Rachel" no se marca, baja `wake_min_conf` (por ejemplo a 0.45). `doctor` muestra si Vosk y el modelo están listos. |
+| Se activa sola | Algo sonó como su nombre al empezar una frase. Sube `wake_min_conf` (por ejemplo a 0.75) o baja el volumen de los parlantes. |
 | Rachel habla demasiado mientras Claude piensa | `"narrate_progress": "off"` quita interjecciones y progreso; `"voice_ack": false`, el acuse. |
 
 ## Hoja de ruta

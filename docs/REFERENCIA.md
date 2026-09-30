@@ -12,12 +12,12 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 | `talktome.py repite` · `repeat` | Repite la última respuesta dicha, de cualquier proyecto. |
 | `talktome.py detalle` · `detail` | Narra el detalle de la última respuesta. |
 | `talktome.py design [--acento A] [--description D] [--name N] [--no-play]` | Voice Design: genera voces candidatas, elige una, la guarda y la activa. |
-| `talktome.py voices` | Lista las voces de su cuenta de ElevenLabs. |
+| `talktome.py voices [--usar NOMBRE]` · `voces` | Lista las voces de su cuenta; `--usar Rachel` activa una por nombre o ID (en `talktome.local.json`). |
 | `talktome.py quota` | Caracteres usados y disponibles. |
 | `talktome.py frases [--inventa]` · `lines` | Banco de frases e inventadas; `--inventa` pide nuevas ya. |
 | `talktome.py escucha [--tecla T]` · `listen` | Dictado (solo Windows): mantenga la tecla, hable y suéltela; el texto se escribe en la ventana activa y se envía. Ctrl+C para salir. Una sola escucha a la vez. Normalmente no hace falta: arranca sola con Claude Code. |
 | `talktome.py escucha --detener` | Termina la escucha en segundo plano. |
-| `talktome.py despierta [--instalar] [--prueba]` · `wake` | Activación por voz: estado; instala Vosk y el modelo de español; muestra en vivo lo que entiende. |
+| `talktome.py despierta [--instalar] [--prueba]` · `wake` | Activación por voz: estado; instala Vosk y su modelo pequeño de inglés; muestra en vivo si reconoce su nombre. |
 | `talktome.py oye [archivo]` · `hear` | Transcribe sin enviar nada: un archivo de audio o, en Windows, el micrófono hasta Enter. |
 | `talktome.py avisos [--preparar] [--prueba TIPO]` · `alerts` | Lista los avisos de error y si están en caché; genera los que falten; dice uno. |
 | `talktome.py stop` | Calla lo que se esté diciendo. |
@@ -57,7 +57,7 @@ Tipos de notificación que Rachel dice (`persona.ATTENTION`): `permission_prompt
 
 ## Configuración
 
-Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.json` (o el antiguo `jarvis.config.json`) → variables de entorno. `voice_settings` se combina clave por clave.
+Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.json` (o el antiguo `jarvis.config.json`) → `talktome.local.json` (la config de esta máquina, ignorada por git; ahí escriben `design` y `voices --usar`) → variables de entorno. `voice_settings` se combina clave por clave.
 
 | Clave | Por defecto | Descripción |
 |---|---|---|
@@ -84,8 +84,7 @@ Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.j
 | `listen_key` | `"F9"` | Tecla de `escucha`: F1–F24, `Pause`, `ScrollLock`, `RightCtrl`, `RightAlt` o un código `0x..`. |
 | `report_errors` | `true` | Decir en voz alta qué falló (una vez cada 10 min por tipo). |
 | `wake` | `"auto"` | Escuchar su nombre: `auto` (si Vosk y el modelo están), `true` (y avisa si falta) o `false`. |
-| `wake_words` | `[]` | Formas extra de escribir su nombre, sumadas a `wake.WAKE_WORDS`. |
-| `wake_model` | `""` | Carpeta del modelo Vosk (por defecto `~/.talktome/models/vosk-model-small-es-0.42`). |
+| `wake_min_conf` | 0.6 | Confianza mínima de Vosk en su nombre (resultado final). |
 | `wake_timeout` | 6 | Segundos para empezar a hablar tras "¿Sí, señor?". |
 | `wake_silence` | 1.2 | Segundos de silencio que terminan la orden. |
 | `wake_flavor` | 0.3 | Probabilidad de una respuesta con guiño a las películas. |
@@ -213,7 +212,7 @@ Variables de entorno:
 | `sessions/<id>/prompt-at` | hook `prompt` | Hora del último prompt, para medir el turno de Claude. |
 | `sessions/<id>/window` | hooks `session` / `prompt` | Ventana de la terminal de esa sesión (Windows). |
 | `speaking.txt` | `player` | Lo que está diciendo ahora: su propia voz no la despierta. |
-| `models/vosk-model-small-es-0.42/` | `despierta --instalar` | Modelo del reconocedor local. |
+| `models/vosk-model-small-en-us-0.15/` | `despierta --instalar` | Modelo del reconocedor local. |
 | `sessions/<id>/turn-done` | hook `stop` | El turno terminó: el acompañante se calla. |
 | `open-sessions/<id>` | hooks `session` / `end` | Sesiones de Claude Code abiertas. |
 | `claude-activity` | todos los hooks | Última actividad de Claude Code. |

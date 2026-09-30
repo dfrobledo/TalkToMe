@@ -216,16 +216,15 @@ def start_wake(cfg, desk, out=print):
             alerts.report("wake", cfg, why)
         return None, None
     try:
-        spotter = wake.VoskSpotter(wake.model_path(cfg))
+        spotter = wake.VoskSpotter.for_config(cfg)
         hub = wake.Hub(mic.Recorder())
         hub.start()
     except Exception as e:
         hooks.log(f"activación por voz: {e}")
         alerts.report(alerts.classify(e) if isinstance(e, mic.MicError) else "wake", cfg, str(e))
         return None, None
-    words = list(dict.fromkeys(wake.WAKE_WORDS + list(cfg.get("wake_words") or [])))
     listener = wake.Wake(cfg, spotter, say=_say_blocking(cfg), deliver=deliverer(cfg, desk, out),
-                         transcribe=stt.transcribe, stop_voice=_hush, stream=_stream, echo=_echo(words),
+                         transcribe=stt.transcribe, stop_voice=_hush, stream=_stream, echo=_echo(wake.WAKE_WORDS),
                          paused=lambda: hub.tap is not None, drain=hub.drain, log=hooks.log)
     stop = threading.Event()
     wake.start_thread(hub.run, listener, stop)

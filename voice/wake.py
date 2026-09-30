@@ -3,8 +3,9 @@
     "Rachel, corre las pruebas."   in one breath: straight to Claude Code
     "Rachel..."  "¿Sí, señor?"  "Corre las pruebas."   with a pause
 
-Her name is spotted on this machine (Vosk, offline, a small Spanish model):
-nothing leaves the PC until she is called. Only then does the command go to
+Her name is spotted on this machine (Vosk, offline, the small English
+model restricted to her name): nothing leaves the PC until she is called.
+The order that follows, in Spanish, goes to Scribe like a dictation. Only then does the command go to
 Scribe, the same as a dictation with the key.
 
 Pieces, all testable without a microphone:
@@ -26,12 +27,16 @@ from pathlib import Path
 
 from .config import STATE_DIR
 
-MODEL_NAME = "vosk-model-small-es-0.42"
+MODEL_NAME = "vosk-model-small-en-us-0.15"
 MODEL_URL = f"https://alphacephei.com/vosk/models/{MODEL_NAME}.zip"
-# Spanish ears hear "Rachel" many ways; `wake_words` in the config adds more.
-WAKE_WORDS = ["rachel", "rachael", "raquel", "reichel", "rechel", "raichel", "ray chel", "rei chel"]
-# May come before her name: "oye, Rachel".
-LEAD = {"oye", "hey", "ey", "ei", "ok", "okay", "hola", "eh", "este", "disculpa", "perdon", "a", "ver"}
+# Vosk only has to tell her name from anything else ("[unk]").
+GRAMMAR = ["rachel", "hey rachel", "okay rachel", "[unk]"]
+# How Scribe, transcribing Spanish, may write her name before the order.
+WAKE_WORDS = ["rachel", "rachael", "raquel", "reichel", "reychel", "reishel", "reichol", "rechel", "raichel",
+              "raychel", "ray chel", "rei chel", "rey chel"]
+# May come before her name: "oye, Rachel". "unk" is the English model's
+# "something else": a breath or a click before the name.
+LEAD = {"oye", "hey", "ey", "ei", "ok", "okay", "hola", "eh", "este", "disculpa", "perdon", "a", "ver", "unk"}
 CANCEL = {"nada", "olvidalo", "no nada", "nada nada", "olvidalo nada", "no importa", "cancela", "cancelar",
           "dejalo", "ya no", "nada olvidalo", "no olvidalo"}
 FILLER = {"eh", "este", "mmm", "em", "ah"}
@@ -155,7 +160,7 @@ class Wake:
         if is_stop is None:
             from .hooks import is_stop
         self.is_stop = is_stop
-        self.words = list(dict.fromkeys(WAKE_WORDS + list(cfg.get("wake_words") or [])))
+        self.words = WAKE_WORDS
         self.gate = Gate()
         self._sleep()
 
@@ -215,7 +220,11 @@ class Wake:
             self.log(f"activación: «{text}» de un tirón")
             self._sleep()
             rest = " ".join(after)
-            if self.is_stop(rest) or is_cancel(rest):
+            if all(w == "unk" for w in after):
+                # The English model only knows her name: "something else" may be
+                # the order in Spanish, or just a breath. Scribe will tell.
+                self._process(audio, live, answer_if_empty=True)
+            elif self.is_stop(rest) or is_cancel(rest):
                 if live:
                     live.cancel()
                 if is_cancel(rest):
@@ -228,6 +237,10 @@ class Wake:
             return
         if live:
             live.cancel()
+        self._answer()
+
+    def _answer(self):
+        """'¿Sí, señor?', then listen for the order."""
         self.log("activación: su nombre, espera la orden")
         flavor = self.rng.random() < self.cfg.get("wake_flavor", 0.3)
         self.say(self.persona.wake(self.cfg["honorific"], flavor=flavor))
@@ -265,7 +278,7 @@ class Wake:
         self.spotter.reset()
         self._sleep()
 
-    def _process(self, pcm, live):
+    def _process(self, pcm, live, answer_if_empty=False):
         from . import stt
         from .tts import TTSError
 
@@ -283,6 +296,11 @@ class Wake:
                 self.deliver(None, error=e)
                 return
         text = strip_wake(stt.clean(text), self.words)
+        if not text and answer_if_empty:
+            self.spotter.reset()
+            self.drain()
+            self._answer()  # only her name after all: she answers and waits
+            return
         if not text:
             self.say(self.persona.wake_timeout(self.cfg["honorific"]))
         elif self.is_stop(text):
@@ -295,31 +313,52 @@ class Wake:
         self.drain()
 
 
-class VoskSpotter:
-    """Vosk, offline speech recognition, listening for her name."""
+def confident(result, words=WAKE_WORDS, min_conf=0.0):
+    """Text of a Vosk final result, with her name dropped where Vosk was unsure of it."""
+    names = {normalize(w) for w in words}
+    items = result.get("result")
+    if not items or not min_conf:
+        return result.get("text", "")
+    return " ".join(item["word"] if normalize(item["word"]) not in names or item.get("conf", 1) >= min_conf
+                    else "[unk]" for item in items)
 
-    def __init__(self, model_path, rate=16000):
+
+class VoskSpotter:
+    """Vosk, offline, listening only for her name (anything else is "[unk]").
+
+    `min_conf`: how sure it must be of her name in a final result.
+    """
+
+    def __init__(self, model_path, min_conf=0.0, rate=16000):
         import vosk
 
         vosk.SetLogLevel(-1)
         self.model = vosk.Model(str(model_path))
-        self.rate = rate
-        self.rec = vosk.KaldiRecognizer(self.model, rate)
+        self.min_conf, self.rate = min_conf, rate
+        self.rec = vosk.KaldiRecognizer(self.model, rate, json.dumps(GRAMMAR))
+        self.rec.SetWords(True)
+
+    @classmethod
+    def for_config(cls, cfg):
+        return cls(model_path(), min_conf=cfg.get("wake_min_conf", 0.6))
+
+    def _final(self, raw):
+        return confident(json.loads(raw), min_conf=self.min_conf)
 
     def feed(self, pcm):
         if self.rec.AcceptWaveform(pcm):
-            return "final", json.loads(self.rec.Result()).get("text", "")
+            return "final", self._final(self.rec.Result())
         return "partial", json.loads(self.rec.PartialResult()).get("partial", "")
 
     def flush(self):
-        return json.loads(self.rec.FinalResult()).get("text", "")
+        return self._final(self.rec.FinalResult())
 
     def reset(self):
         self.rec.Reset()
 
 
-def model_path(cfg):
-    return Path(cfg.get("wake_model") or STATE_DIR / "models" / MODEL_NAME)
+def model_path():
+    return STATE_DIR / "models" / MODEL_NAME
 
 
 def engine(cfg):
@@ -328,8 +367,8 @@ def engine(cfg):
         import vosk  # noqa: F401
     except ImportError:
         return False, "falta Vosk (talktome despierta --instalar)"
-    if not (model_path(cfg) / "am").exists() and not (model_path(cfg) / "conf").exists():
-        return False, f"falta el modelo en {model_path(cfg)} (talktome despierta --instalar)"
+    if not (model_path() / "am").exists() and not (model_path() / "conf").exists():
+        return False, f"falta el modelo en {model_path()} (talktome despierta --instalar)"
     return True, ""
 
 
@@ -340,7 +379,7 @@ def enabled(cfg):
 
 
 def install(cfg, out=print):
-    """Install Vosk (pip) and download the Spanish model (~40 MB)."""
+    """Install Vosk (pip) and download its small English model (~40 MB)."""
     import io
     import subprocess
     import urllib.request
@@ -351,9 +390,9 @@ def install(cfg, out=print):
     except ImportError:
         out("Instalando Vosk (pip install vosk)...")
         subprocess.run([sys.executable, "-m", "pip", "install", "vosk"], check=True)
-    target = model_path(cfg)
+    target = model_path()
     if not target.exists():
-        out(f"Descargando el modelo de español ({MODEL_NAME}, ~40 MB)...")
+        out(f"Descargando el modelo del reconocedor local ({MODEL_NAME}, ~40 MB)...")
         with urllib.request.urlopen(MODEL_URL, timeout=120) as resp:
             data = resp.read()
         target.parent.mkdir(parents=True, exist_ok=True)

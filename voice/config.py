@@ -56,8 +56,8 @@ DEFAULTS = {
     # Say "Rachel" to call her (Vosk, offline): "auto" once it is installed
     # (talktome despierta --instalar), true, or false.
     "wake": "auto",
-    "wake_words": [],
-    "wake_model": "",
+    # How sure the recognizer must be that it heard her name (0 to 1).
+    "wake_min_conf": 0.6,
     # After "¿Sí, señor?": seconds to start speaking, and of silence that ends it.
     "wake_timeout": 6,
     "wake_silence": 1.2,
@@ -95,6 +95,20 @@ def config_path():
     return legacy if legacy.exists() and not current.exists() else current
 
 
+def local_path():
+    """talktome.local.json: this machine's own settings (your voice, your
+    projects). Git ignores it, so no pull, checkout or reset can undo them."""
+    return Path(os.environ.get("TALKTOME_LOCAL_CONFIG", ROOT / "talktome.local.json"))
+
+
+def _merge(cfg, path):
+    if path.exists():
+        user = json.loads(path.read_text(encoding="utf-8-sig"))
+        settings = {**cfg["voice_settings"], **user.pop("voice_settings", {})}
+        cfg.update(user)
+        cfg["voice_settings"] = settings
+
+
 def _load_dotenv():
     env_file = ROOT / ".env"
     if not env_file.exists():
@@ -114,12 +128,8 @@ def load():
     from_env = bool(os.environ.get("ELEVENLABS_API_KEY"))
     _load_dotenv()
     cfg = json.loads(json.dumps(DEFAULTS))
-    path = config_path()
-    if path.exists():
-        user = json.loads(path.read_text(encoding="utf-8"))
-        settings = {**cfg["voice_settings"], **user.pop("voice_settings", {})}
-        cfg.update(user)
-        cfg["voice_settings"] = settings
+    _merge(cfg, config_path())
+    _merge(cfg, local_path())  # this machine's settings win
     for key, env in (("voice_id", "ELEVENLABS_VOICE_ID"), ("model_id", "ELEVENLABS_MODEL_ID")):
         if os.environ.get(env):
             cfg[key] = os.environ[env]
@@ -129,13 +139,17 @@ def load():
     return cfg
 
 
-def save_voice_id(voice_id):
-    """Write the voice into the config file, keeping the user's other keys."""
-    path = config_path()
-    data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-    data["voice_id"] = voice_id
+def save_setting(key, value):
+    """Keep a setting in talktome.local.json, next to the other local ones."""
+    path = local_path()
+    data = json.loads(path.read_text(encoding="utf-8-sig")) if path.exists() else {}
+    data[key] = value
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return path
+
+
+def save_voice_id(voice_id):
+    return save_setting("voice_id", voice_id)
 
 
 def set_muted(muted):

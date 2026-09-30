@@ -526,7 +526,7 @@ Se tiene que ir sola, porque mientras corre se queda con F9 en todo Windows. Cad
 
 ## 15. Llamarla por su nombre
 
-El micrófono queda abierto mientras corre la escucha, pero **nada sale de la PC hasta que se dice "Rachel"**: su nombre se reconoce en local con Vosk y un modelo pequeño de español. Vosk es la única dependencia opcional del proyecto: sin él, todo lo demás funciona igual.
+El micrófono queda abierto mientras corre la escucha, pero **nada sale de la PC hasta que se dice "Rachel"**: su nombre se reconoce en local con Vosk y su modelo pequeño de inglés, restringido a una gramática de una sola palabra (`GRAMMAR`: "rachel", "hey rachel"… y "[unk]" para todo lo demás). "Rachel" se dice a la inglesa; la orden en español la transcribe Scribe. Un resultado final solo cuenta si Vosk está seguro del nombre (`wake_min_conf`). Vosk es la única dependencia opcional del proyecto: sin él, todo lo demás funciona igual.
 
 ```mermaid
 stateDiagram-v2
@@ -544,7 +544,7 @@ Piezas:
 
 - **Un solo micrófono** (`Hub`): la grabadora `waveIn` queda abierta sin acumular audio (`keep=False`). Cada trozo de 100 ms va a la cola del reconocedor y, mientras F9 está presionada, también a un `Tap`, que le da a la tecla la misma interfaz que `Recorder` pero arranca al instante. Mientras la tecla graba, la activación se pausa.
 - **Compuerta por energía** (`Gate`): el reconocedor solo recibe audio cuando alguien habla, con 300 ms previos para no perder el inicio de la palabra. Se cierra tras 2 s de silencio, y ahí se pide el resultado final. El piso de ruido baja rápido y sube lento, así que un ventilador o la lluvia no cuentan como voz.
-- **Su nombre al inicio**: `find_wake` solo acepta el nombre como primera palabra, o después de "oye", "hey"… Así "le dije a Rachel que…" en una conversación no la despierta. Las variantes (`WAKE_WORDS` + `wake_words`) cubren cómo un modelo en español escribe "Rachel": raquel, reichel, ray chel…
+- **Su nombre al inicio**: `find_wake` solo acepta el nombre como primera palabra, o después de "oye", "hey"… Así "le dije a Rachel que…" en una conversación no la despierta. `WAKE_WORDS` cubre cómo Scribe puede escribir "Rachel" al transcribir en español (reichel, raquel, ray chel…), para quitar el nombre de la orden. Con el modelo inglés, lo dicho en español después del nombre llega como "[unk]": entonces Scribe decide si hubo orden o solo un respiro.
 - **Rapidez**: basta el resultado parcial para callarla y abrir Scribe Realtime, con el audio del inicio de la frase. Si la orden venía en el mismo aliento, al terminar solo falta el `commit`. Las respuestas cortas ("¿Sí, señor?") se pre-generan en caché al abrir sesión (`persona.stock_lines`).
 - **Sin eco**: `player` escribe en `speaking.txt` lo que está diciendo. Si su nombre aparece ahí, un "Rachel" que llegue mientras habla es su propia voz y se ignora. Después de responder, se descarta el audio que grabó el micrófono mientras ella hablaba.
 - **A qué terminal va**: los hooks `session` y `prompt` guardan la ventana que estaba al frente (`sessions/<id>/window`). `choose_window` elige la de Claude que esté al frente o, si no hay, la última usada que siga abierta. `Desk.bring_to_front` la restaura si está minimizada y, con un toque de Alt, consigue que Windows le ceda el primer plano. Si no hay ninguna, el texto queda en el portapapeles y Rachel lo dice.

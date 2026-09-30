@@ -30,7 +30,7 @@ class NameTest(unittest.TestCase):
         self.assertEqual(wake.strip_wake("Oye, Raquel: ¿qué hora es en Tokio?"), "¿Qué hora es en Tokio?")
         self.assertEqual(wake.strip_wake("Rachel."), "")
         self.assertEqual(wake.strip_wake("Corre las pruebas."), "Corre las pruebas.")
-        self.assertEqual(wake.strip_wake("Réichel, sí", ["reichel"]), "Sí")
+        self.assertEqual(wake.strip_wake("Réichel, sí"), "Sí")
 
     def test_cancel(self):
         for said in ("Nada.", "Nada, olvídalo.", "No importa", "cancela"):
@@ -209,6 +209,35 @@ class WakeTest(unittest.TestCase):
         self.assertFalse(any("[" in text for text in stock))
         self.assertTrue(any("[" in text for text in persona.stock_lines("señor", expressive=True)))
 
+    def test_english_model_order_in_spanish(self):
+        # Restricted to her name, the English model hears the Spanish order as "[unk]".
+        talk = Conversation([("partial", "rachel"), ("final", "rachel [unk] [unk] [unk]")],
+                            heard="Rachel, corre las pruebas.")
+        talk.play(LOUD, LOUD)
+        self.assertEqual(talk.delivered, ["Corre las pruebas."])
+
+    def test_english_model_only_her_name_and_a_breath(self):
+        talk = Conversation([("final", "rachel [unk]")], heard="Rachel.")
+        talk.play(LOUD)
+        wake_lines = {persona._fill(t, "señor") for t, _, _ in lines.WAKE}
+        self.assertIn(talk.said[0], wake_lines)  # "¿Sí, señor?", not "Será en otro momento"
+        self.assertEqual(talk.wake.state, "listening")
+
+    def test_a_click_before_her_name(self):
+        self.assertEqual(wake.find_wake(wake.normalize("[unk] rachel").split()), (1, 2))
+        self.assertIsNone(wake.find_wake(wake.normalize("[unk] [unk] [unk] rachel").split()))
+
+    def test_unsure_names_are_dropped(self):
+        result = {"text": "rachel", "result": [{"word": "rachel", "conf": 0.41}]}
+        self.assertEqual(wake.confident(result, min_conf=0.6), "[unk]")
+        result = {"text": "rachel [unk]", "result": [{"word": "rachel", "conf": 0.93}, {"word": "[unk]", "conf": 1}]}
+        self.assertEqual(wake.confident(result, min_conf=0.6), "rachel [unk]")
+        self.assertEqual(wake.confident({"text": "hola"}, min_conf=0.6), "hola")
+
+    def test_one_small_english_model(self):
+        self.assertTrue(str(wake.model_path()).endswith("vosk-model-small-en-us-0.15"))
+        self.assertIn("rachel", wake.GRAMMAR)
+
     def test_scribe_failure_is_reported(self):
         from voice.tts import TTSError
 
@@ -336,3 +365,30 @@ class EngineTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class LocalConfigTest(unittest.TestCase):
+    def test_voice_survives_in_the_local_file(self):
+        import json
+
+        from voice import config
+
+        config.local_path().unlink(missing_ok=True)
+        path = config.save_voice_id("mi-voz-rachel")
+        self.assertEqual(path, config.local_path())
+        self.assertEqual(config.load()["voice_id"], "mi-voz-rachel")
+        config.save_setting("voice_settings", {"speed": 1.0})
+        cfg = config.load()
+        self.assertEqual((cfg["voice_settings"]["speed"], cfg["voice_settings"]["stability"]), (1.0, 0.4))
+        self.assertEqual(json.loads(path.read_text())["voice_id"], "mi-voz-rachel")
+        path.unlink()
+
+    def test_voices_usar_by_name(self):
+        from voice import cli, config
+
+        config.local_path().unlink(missing_ok=True)
+        library = [{"voice_id": "abc", "name": "Rachel"}, {"voice_id": "pFZ", "name": "Lily"}]
+        with mock.patch("voice.cli.tts.voices", return_value=library), mock.patch("builtins.print"):
+            self.assertEqual(cli.cmd_voices(mock.Mock(usar="rachel"), CFG), 0)
+        self.assertEqual(config.load()["voice_id"], "abc")
+        config.local_path().unlink()
