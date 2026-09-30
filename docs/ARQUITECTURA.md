@@ -34,6 +34,7 @@ Este documento explica cómo está armado por dentro. Para instalarlo y usarlo, 
 | **Gastar poco** | Solo se sintetiza el resumen, con tope de caracteres; las frases cortas y "repite" salen de caché. |
 | **Estado en archivos** | Cada hook es un proceso nuevo: la memoria entre llamadas vive en `~/.talktome`. |
 | **Una voz, muchas terminales** | Cada sesión tiene su memoria; el altavoz se comparte por turnos. |
+| **Lo tuyo, a salvo** | Tu voz y tus ajustes viven fuera del repositorio, con respaldos, historial y una copia en `.env` que leen todas las versiones. `tests/test_protection.py` reproduce cada forma de perderlos. |
 
 ## 2. Vista general
 

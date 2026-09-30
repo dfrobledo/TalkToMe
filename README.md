@@ -71,7 +71,7 @@ Sin mpv/ffmpeg también funciona (Windows usa `winsound`), pero espera a tener e
 | `python talktome.py detalle` | Narra el detalle de la última respuesta desde la terminal |
 | `python talktome.py say "texto"` | Decir algo (sin texto: frase de prueba) |
 | `python talktome.py design` | Crear su voz con Voice Design (ver abajo) |
-| `python talktome.py voices` | Listar tus voces con su ID |
+| `python talktome.py voices [--usar NOMBRE \| --recuperar \| --historial]` | Listar tus voces con su ID |
 | `python talktome.py quota` | Caracteres disponibles en tu plan |
 | `python talktome.py frases` | Ver el banco de frases y las que inventó Claude (`--inventa`: pedir nuevas ya) |
 | `python talktome.py escucha` | Dictado a mano (normalmente arranca solo con Claude Code); `--detener` termina el de fondo |
@@ -177,7 +177,18 @@ Saludos, avisos de permiso y recordatorios de espera salen de un banco de frases
 
 Todas caben en la caché: cada frase gasta caracteres de ElevenLabs solo la primera vez que se dice.
 
-## Configuración (`talktome.config.json`)
+## Configuración
+
+**Tu configuración está a salvo.** Tu voz, tus ajustes y tus proyectos viven en `%APPDATA%\TalkToMe\config.json`, fuera del repositorio. Ninguna operación de git, ni volver a clonar, ni volver a una versión anterior puede tocarla:
+
+- **Respaldos**: cada cambio (`design`, `voices --usar`) respalda antes la versión anterior. Se guardan las últimas 10 en `respaldos\`.
+- **Historial de voces**: si la configuración se pierde, Rachel no cambia de voz. Usa la última de su historial (`voices --historial`).
+- **Cualquier versión**: tu voz también queda copiada en `.env`, donde la leen todas las versiones de TalkToMe, incluso las anteriores.
+- **Si algún día suena otra voz**: `python talktome.py voices --recuperar` identifica la tuya por las frases que tiene en caché, y `doctor` te avisa si está sonando la voz comodín.
+- **Para cambiar un ajuste**, edita ese archivo (mismo formato que la tabla de abajo, solo las claves que cambies). `talktome.config.json` trae los valores del proyecto.
+
+Qué está en git y qué no, y cómo volver a una versión anterior sin perder nada: [VERSIONES.md](VERSIONES.md).
+
 
 | Clave | Valor por defecto | Notas |
 |---|---|---|
@@ -235,6 +246,7 @@ El dictado usa Scribe, que ElevenLabs cobra por minuto de audio (solo mientras m
 | Síntoma | Causa y solución |
 |---|---|
 | `syntax error near unexpected token '&'` al abrir Claude Code | Instalación anterior a la corrección de rutas con espacios. `git pull` y `python install.py`. |
+| Rachel cambió de voz (suena británica o española) | Está sonando la voz comodín (Lily). `python talktome.py voices --recuperar` identifica la tuya por su caché y la restaura; `voices --usar Rachel` te deja elegirla de oído. |
 | Rachel solo lee el primer párrafo y no tiene su tono | El proyecto usa otro estilo de salida (por ejemplo "Concise"), que gana sobre el de usuario. En ese proyecto: `/config` → Output style → Rachel. Si vuelve a cambiar, edita `outputStyle` en su `.claude/settings.json`. Mientras tanto, la red de seguridad genera el resumen (con unos segundos de espera). |
 | Acento de España | Voz generada antes del cambio a español latino: `python talktome.py design` (opción `--acento`). |
 | `Invalid API key` (401) | `python talktome.py doctor` muestra el principio y el final de la clave y de dónde sale (`.env` o una variable de entorno de Windows que tiene prioridad). |
