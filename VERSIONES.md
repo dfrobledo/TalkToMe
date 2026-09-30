@@ -8,7 +8,7 @@ Cada versión estable, con el commit exacto para volver a ella. Tu voz, tu clave
 | Llega Rachel | `3ae400a` | La asistente es Rachel, al estilo Blade Runner | Igual |
 | **Fase 1 — Rachel habla** | `deb1f83` | Resumen hablado, red de seguridad, "repite", "detalle", varias terminales, mazos de frases | Igual |
 | **Fase 2a — Rachel escucha** | `42c092e` | Dictado con F9, Scribe en tiempo real, compañía mientras Claude piensa, arranque automático, avisos de error en voz alta | Igual + Windows para el dictado |
-| **Blindaje de la voz** | *(al mergear)* | Tu configuración fuera del repositorio, respaldos, historial de voces, autorreparación, copia en `.env` para cualquier versión, `voices --recuperar` | Igual |
+| **Blindaje de la voz** | `103e462` | Tu configuración fuera del repositorio, respaldos, historial de voces, autorreparación, copia en `.env` para cualquier versión, `voices --recuperar` | Igual |
 
 La **Fase 2c** (llamarla por su nombre) está en desarrollo en su propia rama y todavía no es una versión estable.
 
