@@ -189,6 +189,40 @@ def cmd_design(args, cfg):
         return 0
 
 
+def _voice_note(voice):
+    """What tells two voices of the same name apart: creation date and accent."""
+    import datetime as dt
+
+    notes = []
+    created = voice.get("created_at_unix")
+    if created:
+        notes.append(dt.datetime.fromtimestamp(created).strftime("creada el %d/%m/%Y"))
+    description = (voice.get("description") or "").lower()
+    accent = next((name for name, brief in ACCENTS.items() if brief.lower() in description), None)
+    if accent:
+        notes.append(f"acento {accent}")
+    elif "spanish" in description:
+        notes.append("sin acento latino explícito (versión antigua: suena española)")
+    return " · ".join(notes)
+
+
+def _pick_voice(voices, cfg):
+    """Several voices share the name: say the sample with each, and ask."""
+    print(f"Hay {len(voices)} voces llamadas «{voices[0].get('name')}». Escúchelas:")
+    for i, voice in enumerate(voices, 1):
+        note = _voice_note(voice)
+        print(f"  [{i}] {voice['voice_id']}" + (f"  ({note})" if note else ""))
+        player.claim()
+        try:
+            player.speak(SAMPLE.format(h=cfg["honorific"])[:120], {**cfg, "voice_id": voice["voice_id"]})
+        except tts.TTSError as e:
+            print(f"      (no pude reproducirla: {e})")
+        finally:
+            player.release()
+    choice = input("¿Cuál es la suya? número · Enter = cancelar: ").strip()
+    return voices[int(choice) - 1] if choice.isdigit() and 1 <= int(choice) <= len(voices) else None
+
+
 def cmd_voices(args, cfg):
     voices = tts.voices(cfg)
     if args.usar:
@@ -196,12 +230,13 @@ def cmd_voices(args, cfg):
         match = [v for v in voices if v["voice_id"] == args.usar or v.get("name", "").strip().lower() == wanted]
         if not match:
             print(f"No hay ninguna voz llamada «{args.usar}» en su biblioteca. Estas son las que tiene:", file=sys.stderr)
-        elif len(match) > 1:
-            print(f"Hay {len(match)} voces llamadas «{args.usar}»; elija una por su ID:", file=sys.stderr)
-            voices = match
         else:
-            path = config.save_voice_id(match[0]["voice_id"])
-            print(f"Voz «{match[0].get('name')}» ({match[0]['voice_id']}) activada en {path.name}.")
+            chosen = match[0] if len(match) == 1 else _pick_voice(match, cfg)
+            if not chosen:
+                print("Cancelado; la voz actual no cambia.")
+                return 0
+            path = config.save_voice_id(chosen["voice_id"])
+            print(f"Voz «{chosen.get('name')}» ({chosen['voice_id']}) activada en {path.name}.")
             print("Pruébela: python talktome.py say")
             return 0
     for v in sorted(voices, key=lambda v: v.get("name", "")):

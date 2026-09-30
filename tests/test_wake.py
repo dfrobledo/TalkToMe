@@ -392,3 +392,23 @@ class LocalConfigTest(unittest.TestCase):
             self.assertEqual(cli.cmd_voices(mock.Mock(usar="rachel"), CFG), 0)
         self.assertEqual(config.load()["voice_id"], "abc")
         config.local_path().unlink()
+
+
+class DuplicateVoiceTest(unittest.TestCase):
+    def test_two_voices_named_rachel_are_played_and_chosen(self):
+        from voice import cli, config
+
+        config.local_path().unlink(missing_ok=True)
+        latino = cli.ACCENTS["latino"]
+        library = [{"voice_id": "old", "name": "Rachel", "description": "Latin American woman... Spanish speaker"},
+                   {"voice_id": "new", "name": "Rachel", "description": f"... native Spanish speaker with {latino}, ..."}]
+        with mock.patch("voice.cli.tts.voices", return_value=library), mock.patch("builtins.print") as out, \
+                mock.patch("voice.cli.player.speak") as speak, mock.patch("voice.cli.player.claim"), \
+                mock.patch("voice.cli.player.release"), mock.patch("builtins.input", return_value="2"):
+            cli.cmd_voices(mock.Mock(usar="Rachel"), CFG)
+        self.assertEqual([c.args[1]["voice_id"] for c in speak.call_args_list], ["old", "new"])
+        self.assertEqual(config.load()["voice_id"], "new")
+        printed = " ".join(str(c.args[0]) for c in out.call_args_list)
+        self.assertIn("acento latino", printed)
+        self.assertIn("versión antigua", printed)
+        config.local_path().unlink()
