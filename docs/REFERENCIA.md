@@ -12,7 +12,10 @@ Referencia técnica: comandos, configuración, contrato con Claude Code, API de 
 | `talktome.py repite` · `repeat` | Repite la última respuesta dicha, de cualquier proyecto. |
 | `talktome.py detalle` · `detail` | Narra el detalle de la última respuesta. |
 | `talktome.py design [--acento A] [--description D] [--name N] [--no-play]` | Voice Design: genera voces candidatas, elige una, la guarda y la activa. |
-| `talktome.py voices` | Lista las voces de su cuenta de ElevenLabs. |
+| `talktome.py voices` · `voces` | Lista las voces de su cuenta de ElevenLabs. |
+| `talktome.py voices --usar NOMBRE` | Activa una voz por nombre o ID; si varias tienen el mismo nombre, las hace escuchar. |
+| `talktome.py voices --recuperar` | Identifica su voz por la caché (voz, modelo y ajustes coinciden) y la restaura. |
+| `talktome.py voices --historial` | Las voces que ha usado, con fecha. |
 | `talktome.py quota` | Caracteres usados y disponibles. |
 | `talktome.py frases [--inventa]` · `lines` | Banco de frases e inventadas; `--inventa` pide nuevas ya. |
 | `talktome.py escucha [--tecla T]` · `listen` | Dictado (solo Windows): mantenga la tecla, hable y suéltela; el texto se escribe en la ventana activa y se envía. Ctrl+C para salir. Una sola escucha a la vez. Normalmente no hace falta: arranca sola con Claude Code. |
@@ -56,7 +59,9 @@ Tipos de notificación que Rachel dice (`persona.ATTENTION`): `permission_prompt
 
 ## Configuración
 
-Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.json` (o el antiguo `jarvis.config.json`) → variables de entorno. `voice_settings` se combina clave por clave.
+Orden de precedencia, de menor a mayor: `config.DEFAULTS` → `talktome.config.json` (o el antiguo `jarvis.config.json`; valores del proyecto) → **su configuración** (`%APPDATA%\TalkToMe\config.json`, o `~/.config/talktome/config.json`, fuera del repositorio) → variables de entorno / `.env`. `voice_settings` se combina clave por clave.
+
+La primera vez que carga, si `talktome.config.json` tiene cambios propios (una voz, ajustes), los mueve a su configuración. Si esta no tiene voz y está sonando la comodín, usa la última del historial (`voice_healed`). El bloque `# >>> TalkToMe` de `.env` es una copia de su voz para las versiones anteriores: esta versión no lo lee y lo reescribe cuando queda desactualizado.
 
 | Clave | Por defecto | Descripción |
 |---|---|---|
@@ -180,7 +185,7 @@ Variables de entorno:
 | `mic.py` | Solo Windows, con `ctypes`: `Desk(key)` (tecla por gancho de teclado de bajo nivel, o hotkey si no se puede; ventana activa, `type_text`, `copy`, `beep`), `KeyWatcher`, `Recorder` (waveIn, 16 kHz mono en trozos de 100 ms, `start(on_chunk)`, `stop(path)` → WAV), `vk_code`, `key_events`. |
 | `alerts.py` | `classify(error)` → auth/quota/no_key/network/mic/elevated/player/crash; `report(kind, cfg, detail)` (nunca lanza); `line(kind, cfg)`; `missing(cfg)` / `warm(cfg)`: avisos en caché; `system_say(text)`: voz del sistema. |
 | `companion.py` | `accompany(cfg, session, transcript)`; `Companion.run()`: lee el transcript y habla con pausas crecientes (`gap(n)`), tono de interjección según la espera (`tone(n)`); `turn_done(session)`. |
-| `config.py` | `load()`, `save_voice_id(id)`, `set_muted(bool)`, `STATE_DIR`, `ROOT`, `DEFAULTS`. |
+| `config.py` | `load()`, `save_setting(clave, valor)` y `save_voice_id(id, nombre)` (respaldan antes de escribir), `voice_history()`, `sync_mirror(voz)`, `user_dir()`, `backup()`, `set_muted(bool)`, `STATE_DIR`, `ROOT`, `DEFAULTS`, `STAND_IN`. |
 
 ## Archivos de estado (`~/.talktome`)
 
@@ -212,3 +217,14 @@ Variables de entorno:
 | `sessions/<id>/last-reply.mp3\|wav` + `.audio.txt` | `player` | Audio completo y el texto al que corresponde. |
 
 Borrar `~/.talktome` es seguro: se pierde la caché, la memoria de los mazos y las frases inventadas, nada más.
+
+## Su configuración (`%APPDATA%\TalkToMe`)
+
+Fuera del repositorio, a propósito. Conviene incluirla en su respaldo habitual.
+
+| Archivo | Quién lo escribe | Contenido |
+|---|---|---|
+| `config.json` | `config.save_setting` / `save_voice_id`, migración | Sus ajustes: voz, `voice_settings`, proyectos… (solo lo que difiere de los valores del proyecto). |
+| `voces.json` | `config.remember_voice` | Cada voz elegida, con nombre y fecha: repara la voz si `config.json` se pierde. |
+| `respaldos/config-*.json` | `config.backup` | Las últimas 10 versiones de `config.json`, antes de cada cambio. |
+| `respaldos/.env-*` | `config.sync_mirror` | `.env` tal como estaba antes de que TalkToMe le agregara la copia de su voz. |

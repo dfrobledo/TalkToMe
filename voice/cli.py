@@ -182,14 +182,107 @@ def cmd_design(args, cfg):
             print("Cancelado; la voz actual no cambia.")
             return 0
         voice_id = tts.save_voice(args.name, description, previews[int(choice) - 1]["generated_voice_id"], cfg)
-        path = config.save_voice_id(voice_id)
+        path = config.save_voice_id(voice_id, args.name)
         print(f"Voz '{args.name}' guardada en su biblioteca ({voice_id}) y activada en {path.name}.")
         print("Pruébela: python talktome.py say")
         return 0
 
 
+def _voice_note(voice):
+    """What tells two voices of the same name apart: creation date and accent."""
+    import datetime as dt
+
+    notes = []
+    created = voice.get("created_at_unix")
+    if created:
+        notes.append(dt.datetime.fromtimestamp(created).strftime("creada el %d/%m/%Y"))
+    description = (voice.get("description") or "").lower()
+    accent = next((name for name, brief in ACCENTS.items() if brief.lower() in description), None)
+    if accent:
+        notes.append(f"acento {accent}")
+    elif "spanish" in description:
+        notes.append("sin acento latino explícito (versión antigua: suena española)")
+    return " · ".join(notes)
+
+
+def _pick_voice(voices, cfg):
+    """Several voices share the name: say the sample with each, and ask."""
+    print(f"Hay {len(voices)} voces llamadas «{voices[0].get('name')}». Escúchelas:")
+    for i, voice in enumerate(voices, 1):
+        note = _voice_note(voice)
+        print(f"  [{i}] {voice['voice_id']}" + (f"  ({note})" if note else ""))
+        player.claim()
+        try:
+            player.speak(SAMPLE.format(h=cfg["honorific"])[:120], {**cfg, "voice_id": voice["voice_id"]})
+        except tts.TTSError as e:
+            print(f"      (no pude reproducirla: {e})")
+        finally:
+            player.release()
+    choice = input("¿Cuál es la suya? número · Enter = cancelar: ").strip()
+    return voices[int(choice) - 1] if choice.isdigit() and 1 <= int(choice) <= len(voices) else None
+
+
+def cached_lines(cfg):
+    """Every fixed line Rachel may have said (and so may have in the cache)."""
+    h = cfg["honorific"]
+    texts = [alerts.line(kind, cfg) for kind in alerts.LINES]
+    for value in vars(lines).values():
+        for bank in value.values() if isinstance(value, dict) else [value]:
+            if isinstance(bank, list):
+                texts += [t[0].format(h=h, H=h.capitalize(), tool="", p="") for t in bank if isinstance(t, tuple)]
+    return list(dict.fromkeys(texts))
+
+
+def voice_in_cache(candidates, cfg):
+    """{voice_id: lines found in the cache}. A cached file's name depends on
+    the voice, the model and the voice settings together: a match means the
+    exact voice she spoke with."""
+    texts = cached_lines(cfg)
+    return {vid: sum(tts.cache_path(t, {**cfg, "voice_id": vid}, ext).exists() for t in texts for ext in ("mp3", "wav"))
+            for vid in candidates}
+
+
+def _recover(cfg, voices):
+    names = {v["voice_id"]: v.get("name", "") for v in voices}
+    for v in config.voice_history():
+        names.setdefault(v["voice_id"], v.get("name", ""))
+    names.pop(config.STAND_IN, None)
+    hits = voice_in_cache(list(names), cfg)
+    best = max(hits, key=hits.get) if hits else None
+    if not best or not hits[best] or list(hits.values()).count(hits[best]) > 1:
+        print("La caché no alcanza para saber cuál es su voz (quizás cambió los ajustes de voz).")
+        print("Escúchelas y elija: python talktome.py voices --usar Rachel")
+        return 1
+    path = config.save_voice_id(best, names[best])
+    print(f"Su voz es «{names[best]}» ({best}): {hits[best]} frases suyas en la caché coinciden en voz, modelo y ajustes.")
+    print(f"Guardada en {path} (fuera del repositorio) y en .env para cualquier versión.")
+    return 0
+
+
 def cmd_voices(args, cfg):
-    for v in sorted(tts.voices(cfg), key=lambda v: v.get("name", "")):
+    if args.historial:
+        for v in config.voice_history() or []:
+            print(f"{v.get('at', '')}  {v['voice_id']}  {v.get('name', '')}")
+        print(f"Historial en {config.history_path()}")
+        return 0
+    voices = tts.voices(cfg)
+    if args.recuperar:
+        return _recover(cfg, voices)
+    if args.usar:
+        wanted = args.usar.strip().lower()
+        match = [v for v in voices if v["voice_id"] == args.usar or v.get("name", "").strip().lower() == wanted]
+        if not match:
+            print(f"No hay ninguna voz llamada «{args.usar}» en su biblioteca. Estas son las que tiene:", file=sys.stderr)
+        else:
+            chosen = match[0] if len(match) == 1 else _pick_voice(match, cfg)
+            if not chosen:
+                print("Cancelado; la voz actual no cambia.")
+                return 0
+            path = config.save_voice_id(chosen["voice_id"], chosen.get("name", ""))
+            print(f"Voz «{chosen.get('name')}» ({chosen['voice_id']}) activada en {path}.")
+            print("Pruébela: python talktome.py say")
+            return 0
+    for v in sorted(voices, key=lambda v: v.get("name", "")):
         labels = v.get("labels") or {}
         tags = ", ".join(str(labels[k]) for k in ("gender", "accent", "age", "descriptive") if labels.get(k))
         print(f"{v['voice_id']}  {v.get('name', ''):<28} {tags}")
@@ -206,6 +299,12 @@ def cmd_quota(args, cfg):
 def cmd_doctor(args, cfg):
     ok = True
     print(f"Config:     voz {cfg['voice_id']} · modelo {cfg['model_id']} · modo {cfg['mode']}")
+    print(f"Su config:  {config.user_path()} (fuera del repositorio; respaldos en {config.user_dir() / 'respaldos'})")
+    if cfg.get("voice_healed"):
+        print("            Su config no tenía voz: uso la última de su historial (voices --historial).")
+    elif cfg["voice_id"] == config.STAND_IN:
+        # Lily is only a stand-in: British, so her Spanish sounds foreign.
+        print("            Es la voz comodín (Lily), no la suya. python talktome.py voices --recuperar")
     key = cfg["api_key"]
     if not key:
         print("API key:    FALTA (crea .env con ELEVENLABS_API_KEY)")
@@ -367,7 +466,11 @@ def main(argv=None):
     p.add_argument("--name", default="Rachel", help="nombre en tu biblioteca de ElevenLabs")
     p.add_argument("--no-play", action="store_true", help="solo guardar los .mp3")
     p.set_defaults(fn=cmd_design)
-    sub.add_parser("voices", help="lista tus voces de ElevenLabs").set_defaults(fn=cmd_voices)
+    p = sub.add_parser("voices", aliases=["voces"], help="lista tus voces de ElevenLabs")
+    p.add_argument("--usar", metavar="NOMBRE", help="activa una voz de su biblioteca por nombre o ID (p. ej. Rachel)")
+    p.add_argument("--recuperar", action="store_true", help="identifica su voz por la caché y la restaura")
+    p.add_argument("--historial", action="store_true", help="las voces que ha usado, con fecha")
+    p.set_defaults(fn=cmd_voices)
     sub.add_parser("quota", help="caracteres disponibles").set_defaults(fn=cmd_quota)
     sub.add_parser("doctor", help="verifica la instalación").set_defaults(fn=cmd_doctor)
     p = sub.add_parser("frases", aliases=["lines"], help="frases de Rachel, incluidas las inventadas")
